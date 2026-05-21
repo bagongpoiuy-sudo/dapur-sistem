@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, Printer, Loader2, RefreshCw, CreditCard, Table2, User, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle, Printer, Loader2, CreditCard, Table2, User, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, Order, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, generateReceiptNumber } from '../lib/supabase';
 
 export default function CashierPage() {
@@ -127,10 +127,6 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
           </h1>
           <p className="text-gray-500 text-sm mt-1">Pesanan siap dibayar</p>
         </div>
-        <button onClick={fetchOrders} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-          <RefreshCw size={14} />
-          Refresh
-        </button>
       </div>
 
       {loading ? (

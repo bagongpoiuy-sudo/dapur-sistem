@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Clock, CheckCircle, Loader2, RefreshCw, Bell, Table2, User, StickyNote, ChefHat } from 'lucide-react';
+import { Clock, CheckCircle, Loader2, Bell, Table2, User, StickyNote, ChefHat } from 'lucide-react';
 import { supabase, Order, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency } from '../lib/supabase';
 
 interface Props {
@@ -40,8 +40,7 @@ export default function KitchenPage({ kitchen }: Props) {
   useEffect(() => {
     fetchOrders();
 
-    const channel = supabase
-      .channel(`kitchen-${kitchen}`)
+    const channel = supabase.channel(`kitchen-${kitchen}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: `kitchen=eq.${kitchen}` }, payload => {
         setNewOrderIds(prev => new Set([...prev, payload.new.id]));
         fetchOrders();
@@ -50,6 +49,9 @@ export default function KitchenPage({ kitchen }: Props) {
         }, 3000);
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `kitchen=eq.${kitchen}` }, () => {
+        fetchOrders();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items', filter: `kitchen=eq.${kitchen}` }, () => {
         fetchOrders();
       })
       .subscribe();
@@ -85,10 +87,6 @@ export default function KitchenPage({ kitchen }: Props) {
             </div>
           </div>
         </div>
-        <button onClick={fetchOrders} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-          <RefreshCw size={14} />
-          Refresh
-        </button>
       </div>
 
       {/* Stats */}
