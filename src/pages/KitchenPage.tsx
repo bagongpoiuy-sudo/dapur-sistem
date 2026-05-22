@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Clock, CheckCircle, Loader2, Bell, Table2, User, StickyNote, ChefHat } from 'lucide-react';
+import { Clock, CheckCircle, Loader2, RefreshCw, Bell, Table2, User, StickyNote, ChefHat } from 'lucide-react';
 import { supabase, Order, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency } from '../lib/supabase';
 
 interface Props {
@@ -23,6 +23,7 @@ export default function KitchenPage({ kitchen }: Props) {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'processing' | 'done'>('all');
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set());
+  const autoRefresh = true;
 
   const colors = KITCHEN_COLORS[kitchen];
 
@@ -40,7 +41,8 @@ export default function KitchenPage({ kitchen }: Props) {
   useEffect(() => {
     fetchOrders();
 
-    const channel = supabase.channel(`kitchen-${kitchen}`)
+    const channel = supabase
+      .channel(`kitchen-${kitchen}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: `kitchen=eq.${kitchen}` }, payload => {
         setNewOrderIds(prev => new Set([...prev, payload.new.id]));
         fetchOrders();
@@ -48,16 +50,35 @@ export default function KitchenPage({ kitchen }: Props) {
           setNewOrderIds(prev => { const n = new Set(prev); n.delete(payload.new.id); return n; });
         }, 3000);
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `kitchen=eq.${kitchen}` }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_items', filter: `kitchen=eq.${kitchen}` }, payload => {
+        if (payload.new?.order_id) {
+          setNewOrderIds(prev => new Set([...prev, payload.new.order_id]));
+          setTimeout(() => {
+            setNewOrderIds(prev => {
+              const n = new Set(prev);
+              n.delete(payload.new.order_id);
+              return n;
+            });
+          }, 3000);
+        }
         fetchOrders();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items', filter: `kitchen=eq.${kitchen}` }, () => {
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'order_items', filter: `kitchen=eq.${kitchen}` }, () => {
+        fetchOrders();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `kitchen=eq.${kitchen}` }, () => {
         fetchOrders();
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [kitchen, fetchOrders]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const timer = window.setInterval(fetchOrders, 2000);
+    return () => window.clearInterval(timer);
+  }, [fetchOrders, autoRefresh]);
 
   async function updateStatus(orderId: string, status: string) {
     await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId);
@@ -86,6 +107,13 @@ export default function KitchenPage({ kitchen }: Props) {
               <p className="text-gray-500 text-sm">{orders.length} pesanan aktif</p>
             </div>
           </div>
+        </div>
+        <div className="flex items-end gap-3">
+          <button onClick={fetchOrders} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+            <RefreshCw size={14} />
+            Refresh
+          </button>
+          <p className="text-xs text-gray-500">Auto refresh setiap 2 detik</p>
         </div>
       </div>
 
