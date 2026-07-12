@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, Printer, Loader2, RefreshCw, CreditCard, Table2, User, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle, Printer, Loader2, RefreshCw, CreditCard, Table2, User, ChevronDown, ChevronUp, Lock, Unlock } from 'lucide-react';
 import { supabase, Order, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, generateReceiptNumber } from '../lib/supabase';
 
 export default function CashierPage() {
@@ -7,6 +7,8 @@ export default function CashierPage() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [paying, setPaying] = useState<string | null>(null);
+  const [cashierName, setCashierName] = useState<string>('');
+  const [cashierLocked, setCashierLocked] = useState<boolean>(false);
 
   const fetchOrders = useCallback(async () => {
     const { data } = await supabase
@@ -25,6 +27,17 @@ export default function CashierPage() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchOrders]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('cashier_name');
+      const locked = localStorage.getItem('cashier_locked') === 'true';
+      if (stored) setCashierName(stored);
+      if (locked) setCashierLocked(true);
+    } catch (e) {
+      // ignore in non-browser environments
+    }
+  }, []);
 
   // Group orders by table
   const tableGroups = orders.reduce<Record<string, Order[]>>((acc, o) => {
@@ -52,14 +65,15 @@ export default function CashierPage() {
     const total = allItems.reduce((s, i) => s + i.subtotal, 0);
     const receiptNumber = generateReceiptNumber();
 
-    await supabase.from('cashier_receipts').insert({
-      receipt_number: receiptNumber,
-      table_number: tableNumber,
-      waiter_name: waiterName,
-      total_amount: total,
-      items_snapshot: allItems,
-      paid_at: new Date().toISOString(),
-    });
+      await supabase.from('cashier_receipts').insert({
+        receipt_number: receiptNumber,
+        table_number: tableNumber,
+        waiter_name: waiterName,
+        cashier_name: cashierName || '',
+        total_amount: total,
+        items_snapshot: allItems,
+        paid_at: new Date().toISOString(),
+      });
 
     for (const o of tableOrders) {
       await supabase.from('orders').update({ status: 'paid', updated_at: new Date().toISOString() }).eq('id', o.id);
@@ -69,11 +83,11 @@ export default function CashierPage() {
     fetchOrders();
 
     // Print receipt
-    printReceipt({ receiptNumber, tableNumber, waiterName, items: allItems, total });
+      printReceipt({ receiptNumber, tableNumber, waiterName, cashierName, items: allItems, total });
   }
 
   function printReceipt({ receiptNumber, tableNumber, waiterName, items, total }: {
-    receiptNumber: string; tableNumber: string; waiterName: string;
+    receiptNumber: string; tableNumber: string; waiterName: string; cashierName?: string;
     items: { name: string; price: number; quantity: number; subtotal: number; kitchen: Kitchen }[];
     total: number;
   }) {
@@ -100,6 +114,7 @@ export default function CashierPage() {
 <div class="row"><span>No. Struk</span><span>${receiptNumber}</span></div>
 <div class="row"><span>Meja</span><span>${tableNumber}</span></div>
 <div class="row"><span>Pelayan</span><span>${waiterName}</span></div>
+<div class="row"><span>Kasir</span><span>${cashierName || ''}</span></div>
 <div class="row"><span>Waktu</span><span>${new Date().toLocaleString('id-ID')}</span></div>
 <div class="divider"></div>
 ${kitchens.filter(k => grouped[k]?.length).map(k => `
@@ -127,10 +142,40 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
           </h1>
           <p className="text-gray-500 text-sm mt-1">Pesanan siap dibayar</p>
         </div>
-        <button onClick={fetchOrders} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-          <RefreshCw size={14} />
-          Refresh
-        </button>
+          <div className="flex items-center gap-3">
+            <input
+              value={cashierName}
+              onChange={(e) => {
+                if (cashierLocked) return;
+                setCashierName(e.target.value);
+                try { localStorage.setItem('cashier_name', e.target.value); } catch (e) {}
+              }}
+              placeholder="Nama Kasir"
+              disabled={cashierLocked}
+              className="px-3 py-2 border border-gray-200 rounded-xl text-sm"
+            />
+            <button
+              onClick={() => {
+                if (!cashierLocked) {
+                  if (!cashierName.trim()) { alert('Masukkan nama kasir sebelum mengunci'); return; }
+                  setCashierLocked(true);
+                  try { localStorage.setItem('cashier_locked', 'true'); localStorage.setItem('cashier_name', cashierName); } catch (e) {}
+                } else {
+                  if (!confirm('Lepaskan kunci nama kasir?')) return;
+                  setCashierLocked(false);
+                  try { localStorage.removeItem('cashier_locked'); } catch (e) {}
+                }
+              }}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              {cashierLocked ? <Lock size={14} /> : <Unlock size={14} />}
+              {cashierLocked ? 'Terkunci' : 'Kunci'}
+            </button>
+            <button onClick={fetchOrders} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+              <RefreshCw size={14} />
+              Refresh
+            </button>
+          </div>
       </div>
 
       {loading ? (
@@ -223,7 +268,7 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
                               name: i.menu_item_name, price: i.menu_item_price,
                               quantity: i.quantity, subtotal: i.subtotal, kitchen: i.kitchen as Kitchen
                             }));
-                            printReceipt({ receiptNumber: 'PREVIEW', tableNumber, waiterName, items, total });
+                            printReceipt({ receiptNumber: 'PREVIEW', tableNumber, waiterName, cashierName, items, total });
                           }}
                           className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors text-sm"
                         >

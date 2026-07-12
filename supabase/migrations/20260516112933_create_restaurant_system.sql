@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS cashier_receipts (
   receipt_number text UNIQUE NOT NULL,
   table_number text NOT NULL DEFAULT '',
   waiter_name text NOT NULL DEFAULT '',
+  cashier_name text NOT NULL DEFAULT '',
   total_amount numeric(10,2) NOT NULL DEFAULT 0,
   items_snapshot jsonb NOT NULL DEFAULT '[]',
   paid_at timestamptz DEFAULT now(),
