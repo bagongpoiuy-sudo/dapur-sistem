@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Minus, Trash2, Send, ShoppingCart, User, Table2, StickyNote, RefreshCw } from 'lucide-react';
-import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, generateReceiptNumber } from '../lib/supabase';
+import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency } from '../lib/supabase';
 
 interface CartItem {
   menuItem: MenuItem;
@@ -13,7 +13,10 @@ export default function WaiterPage() {
   const [selectedKitchen, setSelectedKitchen] = useState<Kitchen>('cafe');
   const [tableNumber, setTableNumber] = useState('');
   const [waiterName, setWaiterName] = useState('');
-  const [notes, setNotes] = useState('');
+  const [foodNotes, setFoodNotes] = useState('');
+  const [drinkNotes, setDrinkNotes] = useState('');
+  const [foodNotesKitchen, setFoodNotesKitchen] = useState<Kitchen | ''>('');
+  const [drinkNotesKitchen, setDrinkNotesKitchen] = useState<Kitchen | ''>('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -60,17 +63,26 @@ export default function WaiterPage() {
     if (!tableNumber.trim()) return alert('Masukkan nomor meja!');
     if (!waiterName.trim()) return alert('Masukkan nama pelayan!');
     if (cart.length === 0) return alert('Keranjang masih kosong!');
+    if (foodNotes.trim() && !foodNotesKitchen) return alert('Pilih dapur tujuan catatan makanan!');
+    if (drinkNotes.trim() && !drinkNotesKitchen) return alert('Pilih dapur tujuan catatan minuman!');
 
     setSubmitting(true);
-    const kitchens = Object.keys(cartByKitchen) as Kitchen[];
+    const orderKitchens = new Set<Kitchen>(Object.keys(cartByKitchen) as Kitchen[]);
+    if (foodNotes.trim() && foodNotesKitchen) orderKitchens.add(foodNotesKitchen);
+    if (drinkNotes.trim() && drinkNotesKitchen) orderKitchens.add(drinkNotesKitchen);
+    const kitchens = [...orderKitchens];
 
     for (const kitchen of kitchens) {
-      const items = cartByKitchen[kitchen];
+      const items = cartByKitchen[kitchen] || [];
+      const notes = [
+        foodNotes.trim() && foodNotesKitchen === kitchen && `Makanan: ${foodNotes.trim()}`,
+        drinkNotes.trim() && drinkNotesKitchen === kitchen && `Minuman: ${drinkNotes.trim()}`,
+      ].filter(Boolean).join('\n');
       const { data: order, error: orderErr } = await supabase.from('orders').insert({
         table_number: tableNumber.trim(),
         waiter_name: waiterName.trim(),
         kitchen,
-        notes: notes.trim(),
+        notes,
         status: 'pending',
       }).select().single();
 
@@ -93,7 +105,10 @@ export default function WaiterPage() {
     setSuccessMsg(`Pesanan untuk Meja ${tableNumber} berhasil dikirim ke ${kitchens.map(k => KITCHEN_LABELS[k]).join(', ')}!`);
     setCart([]);
     setTableNumber('');
-    setNotes('');
+    setFoodNotes('');
+    setDrinkNotes('');
+    setFoodNotesKitchen('');
+    setDrinkNotesKitchen('');
     setSubmitting(false);
     setTimeout(() => setSuccessMsg(''), 5000);
   }
@@ -140,16 +155,6 @@ export default function WaiterPage() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                 />
               </div>
-            </div>
-            <div className="mt-3">
-              <label className="block text-xs font-medium text-gray-500 mb-1.5"><StickyNote size={12} className="inline mr-1" />Catatan (opsional)</label>
-              <input
-                type="text"
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="cth: tidak pakai bawang"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-              />
             </div>
           </div>
 
@@ -262,6 +267,61 @@ export default function WaiterPage() {
                       </div>
                     </div>
                   ))}
+
+                  <div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label htmlFor="food-notes" className="block text-xs font-medium text-gray-500 mb-1.5">
+                          <StickyNote size={12} className="inline mr-1" />Catatan makanan (opsional)
+                        </label>
+                        <textarea
+                          id="food-notes"
+                          value={foodNotes}
+                          onChange={e => setFoodNotes(e.target.value)}
+                          placeholder="cth: tidak pakai bawang"
+                          rows={2}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 resize-y"
+                        />
+                        <label htmlFor="food-notes-kitchen" className="block text-xs font-medium text-gray-500 mt-2 mb-1">
+                          Kirim catatan makanan ke
+                        </label>
+                        <select
+                          id="food-notes-kitchen"
+                          value={foodNotesKitchen}
+                          onChange={e => setFoodNotesKitchen(e.target.value as Kitchen | '')}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                        >
+                          <option value="">Pilih dapur</option>
+                          {kitchens.map(k => <option key={k} value={k}>{KITCHEN_LABELS[k]}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="drink-notes" className="block text-xs font-medium text-gray-500 mb-1.5">
+                          <StickyNote size={12} className="inline mr-1" />Catatan minuman (opsional)
+                        </label>
+                        <textarea
+                          id="drink-notes"
+                          value={drinkNotes}
+                          onChange={e => setDrinkNotes(e.target.value)}
+                          placeholder="cth: es sedikit, gula dipisah"
+                          rows={2}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 resize-y"
+                        />
+                        <label htmlFor="drink-notes-kitchen" className="block text-xs font-medium text-gray-500 mt-2 mb-1">
+                          Kirim catatan minuman ke
+                        </label>
+                        <select
+                          id="drink-notes-kitchen"
+                          value={drinkNotesKitchen}
+                          onChange={e => setDrinkNotesKitchen(e.target.value as Kitchen | '')}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                        >
+                          <option value="">Pilih dapur</option>
+                          {kitchens.map(k => <option key={k} value={k}>{KITCHEN_LABELS[k]}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="pt-3 border-t border-gray-100">
                     <div className="flex justify-between text-sm font-bold text-gray-900">

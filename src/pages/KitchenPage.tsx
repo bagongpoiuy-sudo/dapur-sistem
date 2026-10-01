@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Clock, CheckCircle, Loader2, RefreshCw, Bell, Table2, User, StickyNote, ChefHat } from 'lucide-react';
 import { supabase, Order, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency } from '../lib/supabase';
 
@@ -23,9 +23,81 @@ export default function KitchenPage({ kitchen }: Props) {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'processing' | 'done'>('all');
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set());
+  const [newOrderNotice, setNewOrderNotice] = useState<{ tableNumber: string; waiterName: string } | null>(null);
+  const [alertsEnabled, setAlertsEnabled] = useState(false);
+  const [alertError, setAlertError] = useState('');
+  const audioContextRef = useRef<AudioContext | null>(null);
   const autoRefresh = true;
 
   const colors = KITCHEN_COLORS[kitchen];
+
+  function playAlertSound() {
+    const audioContext = audioContextRef.current;
+    if (!audioContext || audioContext.state === 'closed') return;
+
+    const playTone = () => {
+      [880, 660].forEach((frequency, index) => {
+        const startAt = audioContext.currentTime + index * 0.18;
+        const oscillator = audioContext.createOscillator();
+        const volume = audioContext.createGain();
+        oscillator.frequency.value = frequency;
+        volume.gain.setValueAtTime(0.001, startAt);
+        volume.gain.exponentialRampToValueAtTime(0.18, startAt + 0.02);
+        volume.gain.exponentialRampToValueAtTime(0.001, startAt + 0.16);
+        oscillator.connect(volume);
+        volume.connect(audioContext.destination);
+        oscillator.start(startAt);
+        oscillator.stop(startAt + 0.17);
+      });
+    };
+
+    if (audioContext.state === 'suspended') {
+      void audioContext.resume().then(playTone).catch(() => {
+        setAlertError('Suara tidak dapat diputar. Coba aktifkan ulang notifikasi suara.');
+      });
+      return;
+    }
+
+    playTone();
+  }
+
+  async function toggleAlerts() {
+    if (alertsEnabled) {
+      setAlertsEnabled(false);
+      return;
+    }
+
+    setAlertError('');
+    let permissionRequest: Promise<NotificationPermission> | null = null;
+    if ('Notification' in window && Notification.permission === 'default') {
+      permissionRequest = Notification.requestPermission();
+    }
+
+    try {
+      const audioContext = audioContextRef.current ?? new AudioContext();
+      audioContextRef.current = audioContext;
+      await audioContext.resume();
+      setAlertsEnabled(true);
+      playAlertSound();
+    } catch {
+      setAlertError('Suara tidak dapat diaktifkan di browser ini.');
+    }
+
+    if (permissionRequest) {
+      try {
+        const permission = await permissionRequest;
+        if (permission === 'denied') {
+          setAlertError('Izin notifikasi ditolak. Suara tetap aktif, tetapi notifikasi browser tidak akan muncul.');
+        }
+      } catch {
+        setAlertError('Izin notifikasi browser tidak dapat diminta.');
+      }
+    } else if (!('Notification' in window)) {
+      setAlertError('Browser tidak mendukung notifikasi sistem. Suara di halaman tetap tersedia.');
+    } else if (Notification.permission === 'denied') {
+      setAlertError('Izin notifikasi ditolak. Suara tetap aktif, tetapi notifikasi browser tidak akan muncul.');
+    }
+  }
 
   const fetchOrders = useCallback(async () => {
     const { data } = await supabase
@@ -44,10 +116,25 @@ export default function KitchenPage({ kitchen }: Props) {
     const channel = supabase
       .channel(`kitchen-${kitchen}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: `kitchen=eq.${kitchen}` }, payload => {
+        const newOrder = payload.new as Pick<Order, 'id' | 'table_number' | 'waiter_name'>;
         setNewOrderIds(prev => new Set([...prev, payload.new.id]));
+        setNewOrderNotice({ tableNumber: newOrder.table_number, waiterName: newOrder.waiter_name });
+        if (alertsEnabled) {
+          playAlertSound();
+          if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+            const notification = new Notification(`Pesanan baru - ${KITCHEN_LABELS[kitchen]}`, {
+              body: `Meja ${newOrder.table_number} dari ${newOrder.waiter_name}`,
+              tag: `order-${newOrder.id}`,
+            });
+            notification.onclick = () => {
+              window.focus();
+              notification.close();
+            };
+          }
+        }
         fetchOrders();
         setTimeout(() => {
-          setNewOrderIds(prev => { const n = new Set(prev); n.delete(payload.new.id); return n; });
+          setNewOrderIds(prev => { const n = new Set(prev); n.delete(newOrder.id); return n; });
         }, 3000);
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_items', filter: `kitchen=eq.${kitchen}` }, payload => {
@@ -72,7 +159,19 @@ export default function KitchenPage({ kitchen }: Props) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [kitchen, fetchOrders]);
+  }, [kitchen, fetchOrders, alertsEnabled]);
+
+  useEffect(() => {
+    if (!newOrderNotice) return;
+    const timer = window.setTimeout(() => setNewOrderNotice(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [newOrderNotice]);
+
+  useEffect(() => () => {
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      void audioContextRef.current.close();
+    }
+  }, []);
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -109,6 +208,17 @@ export default function KitchenPage({ kitchen }: Props) {
           </div>
         </div>
         <div className="flex items-end gap-3">
+          <button
+            onClick={toggleAlerts}
+            className={`flex items-center gap-2 px-3 py-2 border rounded-xl text-sm transition-colors ${
+              alertsEnabled
+                ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Bell size={14} />
+            {alertsEnabled ? 'Notifikasi aktif' : 'Aktifkan notifikasi & suara'}
+          </button>
           <button onClick={fetchOrders} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors">
             <RefreshCw size={14} />
             Refresh
@@ -116,6 +226,24 @@ export default function KitchenPage({ kitchen }: Props) {
           <p className="text-xs text-gray-500">Auto refresh setiap 2 detik</p>
         </div>
       </div>
+
+      {alertError && (
+        <p className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2" role="status">
+          {alertError}
+        </p>
+      )}
+
+      {newOrderNotice && (
+        <div className="fixed top-4 left-1/2 z-[100] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center gap-3 rounded-xl border border-orange-300 bg-orange-500 px-4 py-3 text-white shadow-lg" role="alert" aria-live="assertive">
+          <Bell size={20} className="shrink-0" />
+          <div>
+            <p className="text-sm font-bold">Ada pesanan masuk</p>
+            <p className="text-xs text-orange-50">
+              {KITCHEN_LABELS[kitchen]} · Meja {newOrderNotice.tableNumber} · {newOrderNotice.waiterName}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-6">
@@ -200,7 +328,7 @@ export default function KitchenPage({ kitchen }: Props) {
                 {order.notes && (
                   <div className="flex items-start gap-2 mb-3 p-2 bg-yellow-50 rounded-lg">
                     <StickyNote size={12} className="text-yellow-500 mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-yellow-700">{order.notes}</p>
+                    <p className="text-xs text-yellow-700 whitespace-pre-line">{order.notes}</p>
                   </div>
                 )}
 
