@@ -24,91 +24,116 @@ export default function KitchenPage({ kitchen }: Props) {
   const [filter, setFilter] = useState<'all' | 'pending' | 'processing' | 'done'>('all');
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set());
   const [newOrderNotice, setNewOrderNotice] = useState<{ tableNumber: string; waiterName: string } | null>(null);
-  const [alertsEnabled, setAlertsEnabled] = useState(false);
-  const [alertError, setAlertError] = useState('');
   const audioContextRef = useRef<AudioContext | null>(null);
+  const seenOrderIdsRef = useRef<Set<string> | null>(null);
+  const notifiedOrderIdsRef = useRef(new Set<string>());
   const autoRefresh = true;
 
   const colors = KITCHEN_COLORS[kitchen];
 
-  function playAlertSound() {
+  const playAlertSound = useCallback(() => {
+    if (!audioContextRef.current || audioContextRef.current.state === 'closed') return;
     const audioContext = audioContextRef.current;
-    if (!audioContext || audioContext.state === 'closed') return;
 
     const playTone = () => {
-      [880, 660].forEach((frequency, index) => {
-        const startAt = audioContext.currentTime + index * 0.18;
+      [880, 1174, 880].forEach((frequency, index) => {
+        const startAt = audioContext.currentTime + index * 0.24;
         const oscillator = audioContext.createOscillator();
         const volume = audioContext.createGain();
+        oscillator.type = 'triangle';
         oscillator.frequency.value = frequency;
         volume.gain.setValueAtTime(0.001, startAt);
-        volume.gain.exponentialRampToValueAtTime(0.18, startAt + 0.02);
-        volume.gain.exponentialRampToValueAtTime(0.001, startAt + 0.16);
+        volume.gain.exponentialRampToValueAtTime(0.28, startAt + 0.025);
+        volume.gain.exponentialRampToValueAtTime(0.001, startAt + 0.21);
         oscillator.connect(volume);
         volume.connect(audioContext.destination);
         oscillator.start(startAt);
-        oscillator.stop(startAt + 0.17);
+        oscillator.stop(startAt + 0.22);
       });
     };
 
     if (audioContext.state === 'suspended') {
-      void audioContext.resume().then(playTone).catch(() => {
-        setAlertError('Suara tidak dapat diputar. Coba aktifkan ulang notifikasi suara.');
+      void audioContext.resume().then(playTone).catch(error => {
+        console.warn('Kitchen alert sound could not be resumed:', error);
       });
       return;
     }
 
     playTone();
-  }
+  }, []);
 
-  async function toggleAlerts() {
-    if (alertsEnabled) {
-      setAlertsEnabled(false);
-      return;
-    }
-
-    setAlertError('');
-    let permissionRequest: Promise<NotificationPermission> | null = null;
-    if ('Notification' in window && Notification.permission === 'default') {
-      permissionRequest = Notification.requestPermission();
-    }
-
+  const unlockAudio = useCallback(() => {
     try {
       const audioContext = audioContextRef.current ?? new AudioContext();
       audioContextRef.current = audioContext;
-      await audioContext.resume();
-      setAlertsEnabled(true);
-      playAlertSound();
-    } catch {
-      setAlertError('Suara tidak dapat diaktifkan di browser ini.');
-    }
-
-    if (permissionRequest) {
-      try {
-        const permission = await permissionRequest;
-        if (permission === 'denied') {
-          setAlertError('Izin notifikasi ditolak. Suara tetap aktif, tetapi notifikasi browser tidak akan muncul.');
-        }
-      } catch {
-        setAlertError('Izin notifikasi browser tidak dapat diminta.');
+      if (audioContext.state === 'suspended') {
+        void audioContext.resume().catch(error => {
+          console.warn('Kitchen alert audio is blocked by the browser:', error);
+        });
       }
-    } else if (!('Notification' in window)) {
-      setAlertError('Browser tidak mendukung notifikasi sistem. Suara di halaman tetap tersedia.');
-    } else if (Notification.permission === 'denied') {
-      setAlertError('Izin notifikasi ditolak. Suara tetap aktif, tetapi notifikasi browser tidak akan muncul.');
+    } catch (error) {
+      console.warn('Kitchen alert audio is unavailable:', error);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    unlockAudio();
+    window.addEventListener('pointerdown', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, [unlockAudio]);
+
+  useEffect(() => () => {
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      void audioContextRef.current.close();
+    }
+  }, []);
+
+  const notifyNewOrder = useCallback((order: Pick<Order, 'id' | 'table_number' | 'waiter_name'>) => {
+    seenOrderIdsRef.current?.add(order.id);
+    if (notifiedOrderIdsRef.current.has(order.id)) return;
+    notifiedOrderIdsRef.current.add(order.id);
+    setNewOrderIds(prev => new Set([...prev, order.id]));
+    setNewOrderNotice({ tableNumber: order.table_number, waiterName: order.waiter_name });
+    playAlertSound();
+    window.setTimeout(() => {
+      setNewOrderIds(prev => {
+        const next = new Set(prev);
+        next.delete(order.id);
+        return next;
+      });
+    }, 3000);
+  }, [playAlertSound]);
 
   const fetchOrders = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('orders')
       .select('*, order_items(*)')
       .eq('kitchen', kitchen)
       .neq('status', 'paid')
       .order('created_at', { ascending: true });
-    setOrders(data || []);
+    if (error) {
+      console.error(`Failed to load ${KITCHEN_LABELS[kitchen]} orders:`, error);
+      setLoading(false);
+      return;
+    }
+
+    const fetchedOrders = (data || []) as Order[];
+    const seenOrderIds = seenOrderIdsRef.current;
+    if (seenOrderIds) {
+      for (const order of fetchedOrders) {
+        if (!seenOrderIds.has(order.id)) notifyNewOrder(order);
+      }
+    }
+    const updatedSeenOrderIds = seenOrderIdsRef.current ?? new Set<string>();
+    for (const order of fetchedOrders) updatedSeenOrderIds.add(order.id);
+    seenOrderIdsRef.current = updatedSeenOrderIds;
+    setOrders(fetchedOrders);
     setLoading(false);
-  }, [kitchen]);
+  }, [kitchen, notifyNewOrder]);
 
   useEffect(() => {
     fetchOrders();
@@ -117,25 +142,8 @@ export default function KitchenPage({ kitchen }: Props) {
       .channel(`kitchen-${kitchen}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: `kitchen=eq.${kitchen}` }, payload => {
         const newOrder = payload.new as Pick<Order, 'id' | 'table_number' | 'waiter_name'>;
-        setNewOrderIds(prev => new Set([...prev, payload.new.id]));
-        setNewOrderNotice({ tableNumber: newOrder.table_number, waiterName: newOrder.waiter_name });
-        if (alertsEnabled) {
-          playAlertSound();
-          if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-            const notification = new Notification(`Pesanan baru - ${KITCHEN_LABELS[kitchen]}`, {
-              body: `Meja ${newOrder.table_number} dari ${newOrder.waiter_name}`,
-              tag: `order-${newOrder.id}`,
-            });
-            notification.onclick = () => {
-              window.focus();
-              notification.close();
-            };
-          }
-        }
+        notifyNewOrder(newOrder);
         fetchOrders();
-        setTimeout(() => {
-          setNewOrderIds(prev => { const n = new Set(prev); n.delete(newOrder.id); return n; });
-        }, 3000);
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_items', filter: `kitchen=eq.${kitchen}` }, payload => {
         if (payload.new?.order_id) {
@@ -159,19 +167,13 @@ export default function KitchenPage({ kitchen }: Props) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [kitchen, fetchOrders, alertsEnabled]);
+  }, [kitchen, fetchOrders, notifyNewOrder]);
 
   useEffect(() => {
     if (!newOrderNotice) return;
     const timer = window.setTimeout(() => setNewOrderNotice(null), 8000);
     return () => window.clearTimeout(timer);
   }, [newOrderNotice]);
-
-  useEffect(() => () => {
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      void audioContextRef.current.close();
-    }
-  }, []);
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -208,17 +210,6 @@ export default function KitchenPage({ kitchen }: Props) {
           </div>
         </div>
         <div className="flex items-end gap-3">
-          <button
-            onClick={toggleAlerts}
-            className={`flex items-center gap-2 px-3 py-2 border rounded-xl text-sm transition-colors ${
-              alertsEnabled
-                ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            <Bell size={14} />
-            {alertsEnabled ? 'Notifikasi aktif' : 'Aktifkan notifikasi & suara'}
-          </button>
           <button onClick={fetchOrders} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors">
             <RefreshCw size={14} />
             Refresh
@@ -227,15 +218,9 @@ export default function KitchenPage({ kitchen }: Props) {
         </div>
       </div>
 
-      {alertError && (
-        <p className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2" role="status">
-          {alertError}
-        </p>
-      )}
-
       {newOrderNotice && (
-        <div className="fixed top-4 left-1/2 z-[100] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center gap-3 rounded-xl border border-orange-300 bg-orange-500 px-4 py-3 text-white shadow-lg" role="alert" aria-live="assertive">
-          <Bell size={20} className="shrink-0" />
+        <div className="order-notice-enter fixed top-4 left-1/2 z-[100] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center gap-3 rounded-xl border border-orange-300 bg-orange-500 px-4 py-3 text-white shadow-lg" role="alert" aria-live="assertive">
+          <Bell size={22} className="order-notice-bell shrink-0" />
           <div>
             <p className="text-sm font-bold">Ada pesanan masuk</p>
             <p className="text-xs text-orange-50">
