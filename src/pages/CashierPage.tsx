@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, Printer, Loader2, RefreshCw, CreditCard, Table2, User, ChevronDown, ChevronUp, Lock, Unlock } from 'lucide-react';
 import { supabase, Order, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, generateReceiptNumber } from '../lib/supabase';
-import { connectBluetoothPrinter, isBluetoothPrinterConnected, isBluetoothPrinterSupported, printBluetoothReceipt } from '../lib/bluetoothPrinter';
+import { connectBluetoothPrinter, getBluetoothPrinterName, isBluetoothPrinterConnected, isBluetoothPrinterSupported, printBluetoothReceipt } from '../lib/bluetoothPrinter';
 
 export default function CashierPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -11,7 +11,7 @@ export default function CashierPage() {
   const [cashierName, setCashierName] = useState<string>('');
   const [cashierLocked, setCashierLocked] = useState<boolean>(false);
   const [printerLoading, setPrinterLoading] = useState(false);
-  const [printerName, setPrinterName] = useState('');
+  const [printerName, setPrinterName] = useState(getBluetoothPrinterName);
 
   const fetchOrders = useCallback(async () => {
     const { data } = await supabase
@@ -25,11 +25,27 @@ export default function CashierPage() {
 
   useEffect(() => {
     fetchOrders();
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') fetchOrders();
+    }, 2000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') fetchOrders();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     const channel = supabase.channel('cashier-orders')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, () => fetchOrders())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      window.clearInterval(refreshTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      supabase.removeChannel(channel);
+    };
   }, [fetchOrders]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setPrinterName(getBluetoothPrinterName()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     try {
@@ -106,7 +122,7 @@ export default function CashierPage() {
         return;
       }
 
-      const width = 42;
+      const width = 48;
       const line = (left: string, right: string) =>
         `${left.slice(0, Math.max(0, width - right.length)).padEnd(Math.max(0, width - right.length))}${right}`;
       const text = [
@@ -145,7 +161,7 @@ export default function CashierPage() {
     const html = `
 <!DOCTYPE html><html><head><title>Struk #${receiptNumber}</title>
 <style>
-  body{font-family:monospace;max-width:300px;margin:0 auto;padding:16px;font-size:12px;}
+  body{font-family:monospace;width:100%;max-width:380px;box-sizing:border-box;margin:0 auto;padding:16px;font-size:12px;}
   h2{text-align:center;margin:0;font-size:16px;}
   .address{text-align:center;margin:4px 0;font-size:10px;}
   .divider{border-top:1px dashed #000;margin:8px 0;}
@@ -153,6 +169,7 @@ export default function CashierPage() {
   .section-title{font-weight:bold;margin:6px 0 3px;}
   .total{font-weight:bold;font-size:14px;}
   .footer{text-align:center;margin-top:12px;font-size:11px;}
+  @media print{body{max-width:380px;}}
 </style></head><body>
 <h2>Resto Kecombrang</h2>
 <p class="address">Jl. Pakem - Kalasan, Kledoan, Selomartani, Kec. Kalasan, Kabupaten Sleman, Daerah Istimewa Yogyakarta 55571</p>
@@ -180,7 +197,7 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
   async function connectPrinter() {
     setPrinterLoading(true);
     try {
-      setPrinterName(await connectBluetoothPrinter(() => setPrinterName('')));
+      setPrinterName(await connectBluetoothPrinter());
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Gagal menghubungkan printer Bluetooth.');
     } finally {

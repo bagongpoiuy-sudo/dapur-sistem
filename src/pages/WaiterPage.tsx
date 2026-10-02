@@ -7,16 +7,103 @@ interface CartItem {
   quantity: number;
 }
 
+interface WaiterDraft {
+  cart: CartItem[];
+  selectedKitchen: Kitchen;
+  tableNumber: string;
+  waiterName: string;
+  foodNotes: string;
+  drinkNotes: string;
+  foodNotesKitchen: Kitchen | '';
+  drinkNotesKitchen: Kitchen | '';
+}
+
+const waiterDraftKey = 'waiter_order_draft';
+const kitchens: Kitchen[] = ['cafe', 'pentri', 'restoran'];
+
+function isKitchen(value: unknown): value is Kitchen {
+  return value === 'cafe' || value === 'pentri' || value === 'restoran';
+}
+
+function loadWaiterDraft(): WaiterDraft {
+  const emptyDraft: WaiterDraft = {
+    cart: [],
+    selectedKitchen: 'cafe',
+    tableNumber: '',
+    waiterName: '',
+    foodNotes: '',
+    drinkNotes: '',
+    foodNotesKitchen: '',
+    drinkNotesKitchen: '',
+  };
+
+  try {
+    const rawDraft = localStorage.getItem(waiterDraftKey);
+    if (!rawDraft) return emptyDraft;
+    const parsed: unknown = JSON.parse(rawDraft);
+    if (!parsed || typeof parsed !== 'object') return emptyDraft;
+    const draft = parsed as Record<string, unknown>;
+    const cart: CartItem[] = [];
+
+    if (Array.isArray(draft.cart)) {
+      for (const entry of draft.cart) {
+        if (!entry || typeof entry !== 'object') continue;
+        const item = entry as Record<string, unknown>;
+        if (!item.menuItem || typeof item.menuItem !== 'object') continue;
+        const menuItem = item.menuItem as Record<string, unknown>;
+        if (
+          typeof menuItem.id !== 'string' ||
+          typeof menuItem.name !== 'string' ||
+          typeof menuItem.price !== 'number' ||
+          !Number.isFinite(menuItem.price) ||
+          !isKitchen(menuItem.category) ||
+          typeof menuItem.is_available !== 'boolean' ||
+          typeof menuItem.created_at !== 'string' ||
+          typeof item.quantity !== 'number' ||
+          !Number.isInteger(item.quantity) ||
+          item.quantity < 1
+        ) continue;
+        cart.push({
+          menuItem: {
+            id: menuItem.id,
+            name: menuItem.name,
+            price: menuItem.price,
+            category: menuItem.category,
+            is_available: menuItem.is_available,
+            created_at: menuItem.created_at,
+          },
+          quantity: item.quantity,
+        });
+      }
+    }
+
+    return {
+      cart,
+      selectedKitchen: isKitchen(draft.selectedKitchen) ? draft.selectedKitchen : 'cafe',
+      tableNumber: typeof draft.tableNumber === 'string' ? draft.tableNumber : '',
+      waiterName: typeof draft.waiterName === 'string' ? draft.waiterName : '',
+      foodNotes: typeof draft.foodNotes === 'string' ? draft.foodNotes : '',
+      drinkNotes: typeof draft.drinkNotes === 'string' ? draft.drinkNotes : '',
+      foodNotesKitchen: draft.foodNotesKitchen === '' || isKitchen(draft.foodNotesKitchen) ? draft.foodNotesKitchen : '',
+      drinkNotesKitchen: draft.drinkNotesKitchen === '' || isKitchen(draft.drinkNotesKitchen) ? draft.drinkNotesKitchen : '',
+    };
+  } catch (error) {
+    console.warn('Gagal memulihkan draft pesanan pelayan.', error);
+    return emptyDraft;
+  }
+}
+
 export default function WaiterPage() {
+  const [draft] = useState<WaiterDraft>(loadWaiterDraft);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedKitchen, setSelectedKitchen] = useState<Kitchen>('cafe');
-  const [tableNumber, setTableNumber] = useState('');
-  const [waiterName, setWaiterName] = useState('');
-  const [foodNotes, setFoodNotes] = useState('');
-  const [drinkNotes, setDrinkNotes] = useState('');
-  const [foodNotesKitchen, setFoodNotesKitchen] = useState<Kitchen | ''>('');
-  const [drinkNotesKitchen, setDrinkNotesKitchen] = useState<Kitchen | ''>('');
+  const [cart, setCart] = useState<CartItem[]>(draft.cart);
+  const [selectedKitchen, setSelectedKitchen] = useState<Kitchen>(draft.selectedKitchen);
+  const [tableNumber, setTableNumber] = useState(draft.tableNumber);
+  const [waiterName, setWaiterName] = useState(draft.waiterName);
+  const [foodNotes, setFoodNotes] = useState(draft.foodNotes);
+  const [drinkNotes, setDrinkNotes] = useState(draft.drinkNotes);
+  const [foodNotesKitchen, setFoodNotesKitchen] = useState<Kitchen | ''>(draft.foodNotesKitchen);
+  const [drinkNotesKitchen, setDrinkNotesKitchen] = useState<Kitchen | ''>(draft.drinkNotesKitchen);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -24,6 +111,23 @@ export default function WaiterPage() {
   useEffect(() => {
     fetchMenu();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(waiterDraftKey, JSON.stringify({
+        cart,
+        selectedKitchen,
+        tableNumber,
+        waiterName,
+        foodNotes,
+        drinkNotes,
+        foodNotesKitchen,
+        drinkNotesKitchen,
+      }));
+    } catch (error) {
+      console.warn('Gagal menyimpan draft pesanan pelayan.', error);
+    }
+  }, [cart, selectedKitchen, tableNumber, waiterName, foodNotes, drinkNotes, foodNotesKitchen, drinkNotesKitchen]);
 
   async function fetchMenu() {
     setLoading(true);
@@ -112,8 +216,6 @@ export default function WaiterPage() {
     setSubmitting(false);
     setTimeout(() => setSuccessMsg(''), 5000);
   }
-
-  const kitchens: Kitchen[] = ['cafe', 'pentri', 'restoran'];
 
   return (
     <div className="max-w-7xl mx-auto">

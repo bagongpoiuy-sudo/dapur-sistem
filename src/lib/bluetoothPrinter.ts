@@ -56,6 +56,60 @@ const printerProfiles = [
 let selectedPrinter: BluetoothDevice | undefined;
 let selectedProfile: (typeof printerProfiles)[number] | undefined;
 let selectedCharacteristic: BluetoothCharacteristic | undefined;
+let reconnecting = false;
+const watchedDevices = new WeakSet<BluetoothDevice>();
+
+function watchPrinter(device: BluetoothDevice): void {
+  if (watchedDevices.has(device)) return;
+  watchedDevices.add(device);
+  device.addEventListener('gattserverdisconnected', () => {
+    if (selectedPrinter !== device) return;
+    selectedCharacteristic = undefined;
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      window.setTimeout(() => { void reconnectSelectedPrinter(); }, 500);
+    }
+  });
+}
+
+async function reconnectSelectedPrinter(): Promise<void> {
+  const device = selectedPrinter;
+  if (!device?.gatt || (device.gatt.connected && selectedCharacteristic) || reconnecting) return;
+
+  reconnecting = true;
+  let lastError: unknown;
+  try {
+    const server = device.gatt.connected ? device.gatt : await device.gatt.connect();
+    const profiles = selectedProfile
+      ? [selectedProfile, ...printerProfiles.filter(profile => profile !== selectedProfile)]
+      : printerProfiles;
+
+    for (const profile of profiles) {
+      try {
+        const service = await server.getPrimaryService(profile.service);
+        const characteristic = await service.getCharacteristic(profile.characteristic);
+        if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
+          continue;
+        }
+        selectedProfile = profile;
+        selectedCharacteristic = characteristic;
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError ?? new Error('Layanan cetak BLE tidak ditemukan setelah tersambung kembali.');
+  } catch (error) {
+    console.warn('Gagal menyambungkan kembali printer Bluetooth secara otomatis.', error);
+  } finally {
+    reconnecting = false;
+  }
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void reconnectSelectedPrinter();
+  });
+}
 
 export function isBluetoothPrinterSupported(): boolean {
   return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
@@ -65,7 +119,11 @@ export function isBluetoothPrinterConnected(): boolean {
   return Boolean(selectedPrinter?.gatt?.connected && selectedCharacteristic);
 }
 
-export async function connectBluetoothPrinter(onDisconnect?: () => void): Promise<string> {
+export function getBluetoothPrinterName(): string {
+  return isBluetoothPrinterConnected() ? selectedPrinter?.name || 'POS80D' : '';
+}
+
+export async function connectBluetoothPrinter(): Promise<string> {
   const bluetooth = navigator.bluetooth;
   if (!bluetooth) {
     throw new Error('Web Bluetooth tidak didukung browser ini. Gunakan Chrome di Android melalui HTTPS.');
@@ -99,14 +157,7 @@ export async function connectBluetoothPrinter(onDisconnect?: () => void): Promis
       selectedPrinter = device;
       selectedProfile = profile;
       selectedCharacteristic = characteristic;
-      device.addEventListener('gattserverdisconnected', () => {
-        if (selectedPrinter === device) {
-          selectedPrinter = undefined;
-          selectedProfile = undefined;
-          selectedCharacteristic = undefined;
-          onDisconnect?.();
-        }
-      });
+      watchPrinter(device);
       return device.name || 'POS80D';
     } catch {
       continue;
