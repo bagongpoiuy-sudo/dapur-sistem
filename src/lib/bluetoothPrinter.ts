@@ -71,10 +71,20 @@ export async function connectBluetoothPrinter(onDisconnect?: () => void): Promis
     throw new Error('Web Bluetooth tidak didukung browser ini. Gunakan Chrome di Android melalui HTTPS.');
   }
 
-  const device = await bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: printerProfiles.map(profile => profile.service),
-  });
+  let device: BluetoothDevice;
+  try {
+    device = await bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: printerProfiles.map(profile => profile.service),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
+      throw new Error(
+        'Akses Bluetooth diblokir browser. Izinkan Bluetooth untuk situs ini di pengaturan Chrome, buka situs langsung (bukan di dalam iframe), lalu muat ulang halaman.'
+      );
+    }
+    throw error;
+  }
   if (!device.gatt) throw new Error('Printer tidak menyediakan koneksi Bluetooth GATT.');
 
   const server = await device.gatt.connect();

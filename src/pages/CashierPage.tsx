@@ -110,7 +110,11 @@ export default function CashierPage() {
       const line = (left: string, right: string) =>
         `${left.slice(0, Math.max(0, width - right.length)).padEnd(Math.max(0, width - right.length))}${right}`;
       const text = [
-        'RESTOORDER',
+        'Resto Kecombrang',
+        'Jl. Pakem - Kalasan, Kledoan,',
+        'Selomartani, Kec. Kalasan,',
+        'Kabupaten Sleman, Daerah Istimewa',
+        'Yogyakarta 55571',
         'Struk Pembayaran',
         '-'.repeat(width),
         line('No. Struk', receiptNumber),
@@ -143,13 +147,15 @@ export default function CashierPage() {
 <style>
   body{font-family:monospace;max-width:300px;margin:0 auto;padding:16px;font-size:12px;}
   h2{text-align:center;margin:0;font-size:16px;}
+  .address{text-align:center;margin:4px 0;font-size:10px;}
   .divider{border-top:1px dashed #000;margin:8px 0;}
   .row{display:flex;justify-content:space-between;}
   .section-title{font-weight:bold;margin:6px 0 3px;}
   .total{font-weight:bold;font-size:14px;}
   .footer{text-align:center;margin-top:12px;font-size:11px;}
 </style></head><body>
-<h2>RESTOORDER</h2>
+<h2>Resto Kecombrang</h2>
+<p class="address">Jl. Pakem - Kalasan, Kledoan, Selomartani, Kec. Kalasan, Kabupaten Sleman, Daerah Istimewa Yogyakarta 55571</p>
 <p style="text-align:center;margin:4px 0;">Struk Pembayaran</p>
 <div class="divider"></div>
 <div class="row"><span>No. Struk</span><span>${receiptNumber}</span></div>
