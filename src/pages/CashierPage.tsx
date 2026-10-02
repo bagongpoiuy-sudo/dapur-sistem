@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, Printer, Loader2, RefreshCw, CreditCard, Table2, User, ChevronDown, ChevronUp, Lock, Unlock } from 'lucide-react';
 import { supabase, Order, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, generateReceiptNumber } from '../lib/supabase';
-import { getPairedBluetoothPrinters, PairedBluetoothPrinter, printBluetoothReceipt } from '../lib/bluetoothPrinter';
+import { connectBluetoothPrinter, isBluetoothPrinterConnected, isBluetoothPrinterSupported, printBluetoothReceipt } from '../lib/bluetoothPrinter';
 
 export default function CashierPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -10,9 +10,8 @@ export default function CashierPage() {
   const [paying, setPaying] = useState<string | null>(null);
   const [cashierName, setCashierName] = useState<string>('');
   const [cashierLocked, setCashierLocked] = useState<boolean>(false);
-  const [pairedPrinters, setPairedPrinters] = useState<PairedBluetoothPrinter[]>([]);
-  const [printerAddress, setPrinterAddress] = useState('');
   const [printerLoading, setPrinterLoading] = useState(false);
+  const [printerName, setPrinterName] = useState('');
 
   const fetchOrders = useCallback(async () => {
     const { data } = await supabase
@@ -38,15 +37,9 @@ export default function CashierPage() {
       const locked = localStorage.getItem('cashier_locked') === 'true';
       if (stored) setCashierName(stored);
       if (locked) setCashierLocked(true);
-      setPrinterAddress(localStorage.getItem('receipt_printer_address') || '');
     } catch (e) {
       // ignore in non-browser environments
     }
-  }, []);
-
-  useEffect(() => {
-    window.onReceiptPrintResult = (message) => alert(message);
-    return () => { window.onReceiptPrintResult = undefined; };
   }, []);
 
   // Group orders by table
@@ -107,9 +100,9 @@ export default function CashierPage() {
       return acc;
     }, {} as Record<string, typeof items>);
 
-    if (window.AndroidReceiptPrinter) {
-      if (!printerAddress) {
-        alert('Pilih printer Bluetooth terlebih dahulu sebelum mencetak struk.');
+    if (isBluetoothPrinterSupported()) {
+      if (!isBluetoothPrinterConnected()) {
+        alert('Hubungkan printer Bluetooth terlebih dahulu sebelum mencetak struk.');
         return;
       }
 
@@ -139,11 +132,9 @@ export default function CashierPage() {
         '',
       ].join('\n');
 
-      try {
-        printBluetoothReceipt(printerAddress, text);
-      } catch (error) {
+      void printBluetoothReceipt(text).catch((error: unknown) => {
         alert(error instanceof Error ? error.message : 'Gagal mengirim struk ke printer.');
-      }
+      });
       return;
     }
 
@@ -180,27 +171,14 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
     if (w) { w.document.write(html); w.document.close(); w.print(); }
   }
 
-  async function discoverPrinters() {
+  async function connectPrinter() {
     setPrinterLoading(true);
     try {
-      const printers = getPairedBluetoothPrinters();
-      setPairedPrinters(printers);
-      if (!printers.length) {
-        alert('Belum ada printer Bluetooth yang dipasangkan. Pasangkan POS80D melalui Pengaturan Bluetooth Android, lalu coba lagi.');
-      }
+      setPrinterName(await connectBluetoothPrinter(() => setPrinterName('')));
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Gagal mencari printer Bluetooth.');
+      alert(error instanceof Error ? error.message : 'Gagal menghubungkan printer Bluetooth.');
     } finally {
       setPrinterLoading(false);
-    }
-  }
-
-  function selectPrinter(address: string) {
-    setPrinterAddress(address);
-    try {
-      localStorage.setItem('receipt_printer_address', address);
-    } catch {
-      alert('Printer terpilih, tetapi browser tidak dapat menyimpan pilihan ini untuk sesi berikutnya.');
     }
   }
 
@@ -217,29 +195,16 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
           <p className="text-gray-500 text-sm mt-1">Pesanan siap dibayar</p>
         </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
+            {isBluetoothPrinterSupported() && (
               <button
-                onClick={discoverPrinters}
+                onClick={connectPrinter}
                 disabled={printerLoading}
                 className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
               >
                 {printerLoading ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                Cari Printer
+                {isBluetoothPrinterConnected() ? printerName : 'Hubungkan Printer'}
               </button>
-              {pairedPrinters.length > 0 && (
-                <select
-                  value={printerAddress}
-                  onChange={(event) => selectPrinter(event.target.value)}
-                  aria-label="Pilih printer struk"
-                  className="max-w-40 px-2 py-2 border border-gray-200 rounded-xl text-sm text-gray-600"
-                >
-                  <option value="">Pilih printer</option>
-                  {pairedPrinters.map(printer => (
-                    <option key={printer.address} value={printer.address}>{printer.name}</option>
-                  ))}
-                </select>
-              )}
-            </div>
+            )}
             <input
               value={cashierName}
               onChange={(e) => {
