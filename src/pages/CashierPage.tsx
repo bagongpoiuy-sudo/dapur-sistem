@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, Printer, Loader2, RefreshCw, CreditCard, Table2, User, ChevronDown, ChevronUp, Lock, Unlock } from 'lucide-react';
 import { supabase, Order, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, generateReceiptNumber } from '../lib/supabase';
+import { getPairedBluetoothPrinters, PairedBluetoothPrinter, printBluetoothReceipt } from '../lib/bluetoothPrinter';
 
 export default function CashierPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -9,6 +10,9 @@ export default function CashierPage() {
   const [paying, setPaying] = useState<string | null>(null);
   const [cashierName, setCashierName] = useState<string>('');
   const [cashierLocked, setCashierLocked] = useState<boolean>(false);
+  const [pairedPrinters, setPairedPrinters] = useState<PairedBluetoothPrinter[]>([]);
+  const [printerAddress, setPrinterAddress] = useState('');
+  const [printerLoading, setPrinterLoading] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     const { data } = await supabase
@@ -34,9 +38,15 @@ export default function CashierPage() {
       const locked = localStorage.getItem('cashier_locked') === 'true';
       if (stored) setCashierName(stored);
       if (locked) setCashierLocked(true);
+      setPrinterAddress(localStorage.getItem('receipt_printer_address') || '');
     } catch (e) {
       // ignore in non-browser environments
     }
+  }, []);
+
+  useEffect(() => {
+    window.onReceiptPrintResult = (message) => alert(message);
+    return () => { window.onReceiptPrintResult = undefined; };
   }, []);
 
   // Group orders by table
@@ -97,6 +107,46 @@ export default function CashierPage() {
       return acc;
     }, {} as Record<string, typeof items>);
 
+    if (window.AndroidReceiptPrinter) {
+      if (!printerAddress) {
+        alert('Pilih printer Bluetooth terlebih dahulu sebelum mencetak struk.');
+        return;
+      }
+
+      const width = 42;
+      const line = (left: string, right: string) =>
+        `${left.slice(0, Math.max(0, width - right.length)).padEnd(Math.max(0, width - right.length))}${right}`;
+      const text = [
+        'RESTOORDER',
+        'Struk Pembayaran',
+        '-'.repeat(width),
+        line('No. Struk', receiptNumber),
+        line('Meja', tableNumber),
+        line('Pelayan', waiterName),
+        line('Kasir', cashierName || ''),
+        line('Waktu', new Date().toLocaleString('id-ID')),
+        '-'.repeat(width),
+        ...kitchens.flatMap(k => grouped[k]?.length
+          ? [`[${KITCHEN_LABELS[k]}]`, ...grouped[k].map(i =>
+            `${i.quantity}x ${i.name}\n${line('', formatCurrency(i.subtotal))}`
+          )]
+          : []),
+        '-'.repeat(width),
+        line('TOTAL', formatCurrency(total)),
+        '',
+        'Terima kasih atas kunjungan Anda!',
+        '',
+        '',
+      ].join('\n');
+
+      try {
+        printBluetoothReceipt(printerAddress, text);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Gagal mengirim struk ke printer.');
+      }
+      return;
+    }
+
     const html = `
 <!DOCTYPE html><html><head><title>Struk #${receiptNumber}</title>
 <style>
@@ -130,6 +180,30 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
     if (w) { w.document.write(html); w.document.close(); w.print(); }
   }
 
+  async function discoverPrinters() {
+    setPrinterLoading(true);
+    try {
+      const printers = getPairedBluetoothPrinters();
+      setPairedPrinters(printers);
+      if (!printers.length) {
+        alert('Belum ada printer Bluetooth yang dipasangkan. Pasangkan POS80D melalui Pengaturan Bluetooth Android, lalu coba lagi.');
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Gagal mencari printer Bluetooth.');
+    } finally {
+      setPrinterLoading(false);
+    }
+  }
+
+  function selectPrinter(address: string) {
+    setPrinterAddress(address);
+    try {
+      localStorage.setItem('receipt_printer_address', address);
+    } catch {
+      alert('Printer terpilih, tetapi browser tidak dapat menyimpan pilihan ini untuk sesi berikutnya.');
+    }
+  }
+
   const tableKeys = Object.keys(tableGroups);
 
   return (
@@ -143,6 +217,29 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
           <p className="text-gray-500 text-sm mt-1">Pesanan siap dibayar</p>
         </div>
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={discoverPrinters}
+                disabled={printerLoading}
+                className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                {printerLoading ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+                Cari Printer
+              </button>
+              {pairedPrinters.length > 0 && (
+                <select
+                  value={printerAddress}
+                  onChange={(event) => selectPrinter(event.target.value)}
+                  aria-label="Pilih printer struk"
+                  className="max-w-40 px-2 py-2 border border-gray-200 rounded-xl text-sm text-gray-600"
+                >
+                  <option value="">Pilih printer</option>
+                  {pairedPrinters.map(printer => (
+                    <option key={printer.address} value={printer.address}>{printer.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
             <input
               value={cashierName}
               onChange={(e) => {
