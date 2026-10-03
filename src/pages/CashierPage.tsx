@@ -110,7 +110,7 @@ export default function CashierPage() {
     items: { name: string; price: number; quantity: number; subtotal: number; kitchen: Kitchen }[];
     total: number;
   }) {
-    const kitchens: Kitchen[] = ['cafe', 'pentri', 'restoran'];
+    const kitchens: Kitchen[] = ['cafe', 'pentri', 'prasmanan', 'restoran'];
     const grouped = kitchens.reduce<Record<string, typeof items>>((acc, k) => {
       acc[k] = items.filter(i => i.kitchen === k);
       return acc;

@@ -13,7 +13,6 @@ export default function App() {
     <Layout currentPage={page} onNavigate={setPage}>
       {page === 'waiter' && <WaiterPage />}
       {page === 'cafe' && <KitchenPage kitchen="cafe" />}
-      {page === 'pentri' && <KitchenPage kitchen="pentri" />}
       {page === 'restoran' && <KitchenPage kitchen="restoran" />}
       {page === 'cashier' && <CashierPage />}
       {page === 'reports' && <ReportsPage />}

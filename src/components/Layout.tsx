@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ChefHat, Coffee, Croissant, UtensilsCrossed, CreditCard, BarChart3, Menu, X, BookOpen } from 'lucide-react';
+import { ChefHat, Coffee, UtensilsCrossed, CreditCard, BarChart3, Menu, X, BookOpen } from 'lucide-react';
 
-export type Page = 'waiter' | 'cafe' | 'pentri' | 'restoran' | 'cashier' | 'reports' | 'menu-management';
+export type Page = 'waiter' | 'cafe' | 'restoran' | 'cashier' | 'reports' | 'menu-management';
 
 interface LayoutProps {
   currentPage: Page;
@@ -12,7 +12,6 @@ interface LayoutProps {
 const navItems: { page: Page; label: string; icon: React.ReactNode; color: string }[] = [
   { page: 'waiter', label: 'Pelayan', icon: <UtensilsCrossed size={18} />, color: 'text-slate-600' },
   { page: 'cafe', label: 'Dapur Cafe', icon: <Coffee size={18} />, color: 'text-amber-600' },
-  { page: 'pentri', label: 'Dapur Pentri', icon: <Croissant size={18} />, color: 'text-emerald-600' },
   { page: 'restoran', label: 'Dapur Restoran', icon: <ChefHat size={18} />, color: 'text-blue-600' },
   { page: 'cashier', label: 'Kasir', icon: <CreditCard size={18} />, color: 'text-rose-600' },
   { page: 'reports', label: 'Laporan', icon: <BarChart3 size={18} />, color: 'text-violet-600' },

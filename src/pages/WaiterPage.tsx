@@ -19,10 +19,11 @@ interface WaiterDraft {
 }
 
 const waiterDraftKey = 'waiter_order_draft';
-const kitchens: Kitchen[] = ['cafe', 'pentri', 'restoran'];
+const orderCategories: Kitchen[] = ['cafe', 'pentri', 'prasmanan', 'restoran'];
+const kitchens: Kitchen[] = ['cafe', 'restoran'];
 
 function isKitchen(value: unknown): value is Kitchen {
-  return value === 'cafe' || value === 'pentri' || value === 'restoran';
+  return value === 'cafe' || value === 'pentri' || value === 'prasmanan' || value === 'restoran';
 }
 
 function loadWaiterDraft(): WaiterDraft {
@@ -174,9 +175,16 @@ export default function WaiterPage() {
     const orderKitchens = new Set<Kitchen>(Object.keys(cartByKitchen) as Kitchen[]);
     if (foodNotes.trim() && foodNotesKitchen) orderKitchens.add(foodNotesKitchen);
     if (drinkNotes.trim() && drinkNotesKitchen) orderKitchens.add(drinkNotesKitchen);
-    const kitchens = [...orderKitchens];
+    const createdOrderIds: string[] = [];
 
-    for (const kitchen of kitchens) {
+    async function rollbackOrders() {
+      for (const orderId of createdOrderIds) {
+        const { error } = await supabase.from('orders').delete().eq('id', orderId);
+        if (error) console.error('Gagal membatalkan pesanan setelah pengiriman gagal:', error);
+      }
+    }
+
+    for (const kitchen of orderKitchens) {
       const items = cartByKitchen[kitchen] || [];
       const notes = [
         foodNotes.trim() && foodNotesKitchen === kitchen && `Makanan: ${foodNotes.trim()}`,
@@ -190,7 +198,13 @@ export default function WaiterPage() {
         status: 'pending',
       }).select().single();
 
-      if (orderErr || !order) continue;
+      if (orderErr || !order) {
+        await rollbackOrders();
+        alert(`Gagal mengirim pesanan ke ${KITCHEN_LABELS[kitchen]}: ${orderErr?.message || 'Pesanan tidak berhasil dibuat.'}`);
+        setSubmitting(false);
+        return;
+      }
+      createdOrderIds.push(order.id);
 
       const orderItems = items.map(c => ({
         order_id: order.id,
@@ -202,11 +216,33 @@ export default function WaiterPage() {
         kitchen,
       }));
 
-      await supabase.from('order_items').insert(orderItems);
+      if (orderItems.length > 0) {
+        const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
+        if (itemsError) {
+          await rollbackOrders();
+          alert(`Gagal menyimpan item pesanan: ${itemsError.message}`);
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      if (kitchen === 'pentri' || kitchen === 'prasmanan') {
+        const { error: statusError } = await supabase.from('orders')
+          .update({ status: 'done', updated_at: new Date().toISOString() })
+          .eq('id', order.id);
+        if (statusError) {
+          await rollbackOrders();
+          alert(`Pesanan berhasil dibuat, tetapi gagal meneruskannya ke Kasir: ${statusError.message}`);
+          setSubmitting(false);
+          return;
+        }
+      }
     }
 
-    // Also save to cashier pending (using a temp receipt with status pending via orders)
-    setSuccessMsg(`Pesanan untuk Meja ${tableNumber} berhasil dikirim ke ${kitchens.map(k => KITCHEN_LABELS[k]).join(', ')}!`);
+    const destinations = new Set([...orderKitchens].map(k => (
+      k === 'pentri' || k === 'prasmanan' ? 'Kasir' : KITCHEN_LABELS[k]
+    )));
+    setSuccessMsg(`Pesanan untuk Meja ${tableNumber} berhasil dikirim ke ${[...destinations].join(', ')}!`);
     setCart([]);
     setTableNumber('');
     setFoodNotes('');
@@ -221,7 +257,7 @@ export default function WaiterPage() {
     <div className="max-w-7xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Input Pesanan</h1>
-        <p className="text-gray-500 text-sm mt-1">Tambah pesanan dari pelanggan dan kirim ke dapur</p>
+        <p className="text-gray-500 text-sm mt-1">Tambah pesanan pelanggan dan kirim ke dapur atau langsung ke kasir</p>
       </div>
 
       {successMsg && (
@@ -262,7 +298,7 @@ export default function WaiterPage() {
 
           {/* Kitchen tabs */}
           <div className="flex gap-2">
-            {kitchens.map(k => {
+            {orderCategories.map(k => {
               const c = KITCHEN_COLORS[k];
               return (
                 <button
@@ -281,7 +317,11 @@ export default function WaiterPage() {
           {/* Menu Grid */}
           <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-gray-800">{KITCHEN_LABELS[selectedKitchen]}</h2>
+              <h2 className="font-semibold text-gray-800">
+                {selectedKitchen === 'pentri' || selectedKitchen === 'prasmanan'
+                  ? `${KITCHEN_LABELS[selectedKitchen]} · langsung ke Kasir`
+                  : KITCHEN_LABELS[selectedKitchen]}
+              </h2>
               <button onClick={fetchMenu} className="text-gray-400 hover:text-gray-600 transition-colors">
                 <RefreshCw size={15} />
               </button>
@@ -340,7 +380,7 @@ export default function WaiterPage() {
                 <p className="text-gray-400 text-sm text-center py-6">Belum ada pesanan</p>
               ) : (
                 <>
-                  {kitchens.filter(k => cartByKitchen[k]?.length).map(k => (
+                  {orderCategories.filter(k => cartByKitchen[k]?.length).map(k => (
                     <div key={k}>
                       <p className={`text-xs font-bold uppercase tracking-wider ${KITCHEN_COLORS[k].text} mb-2`}>
                         {KITCHEN_LABELS[k]}
@@ -440,7 +480,7 @@ export default function WaiterPage() {
                     {submitting ? (
                       <><RefreshCw size={16} className="animate-spin" />Mengirim...</>
                     ) : (
-                      <><Send size={16} />Kirim ke Dapur</>
+                      <><Send size={16} />Kirim Pesanan</>
                     )}
                   </button>
                 </>

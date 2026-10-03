@@ -76,7 +76,7 @@ export default function ReportsPage() {
   });
 
   const products = Object.values(productMap).sort((a, b) => b.revenue - a.revenue);
-  const kitchens: Kitchen[] = ['cafe', 'pentri', 'restoran'];
+  const kitchens: Kitchen[] = ['cafe', 'pentri', 'prasmanan', 'restoran'];
 
   const kitchenStats = kitchens.map(k => ({
     kitchen: k,

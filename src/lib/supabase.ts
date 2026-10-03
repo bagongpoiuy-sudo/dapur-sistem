@@ -5,7 +5,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export type Kitchen = 'cafe' | 'pentri' | 'restoran';
+export type Kitchen = 'cafe' | 'pentri' | 'prasmanan' | 'restoran';
 export type OrderStatus = 'pending' | 'processing' | 'done' | 'paid';
 
 export interface MenuItem {
@@ -63,13 +63,15 @@ export interface ReceiptItem {
 
 export const KITCHEN_LABELS: Record<Kitchen, string> = {
   cafe: 'Dapur Cafe',
-  pentri: 'Dapur Pentri',
+  pentri: 'Pentri',
+  prasmanan: 'Prasmanan',
   restoran: 'Dapur Restoran',
 };
 
 export const KITCHEN_COLORS: Record<Kitchen, { bg: string; text: string; border: string; badge: string }> = {
   cafe: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700' },
   pentri: { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700' },
+  prasmanan: { bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700' },
   restoran: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' },
 };
 

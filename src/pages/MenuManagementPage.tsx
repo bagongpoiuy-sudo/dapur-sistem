@@ -64,7 +64,7 @@ export default function MenuManagementPage() {
     setDeleting(null);
   }
 
-  const kitchens: Kitchen[] = ['cafe', 'pentri', 'restoran'];
+  const kitchens: Kitchen[] = ['cafe', 'pentri', 'prasmanan', 'restoran'];
   const filtered = items.filter(i => filterKitchen === 'all' || i.category === filterKitchen);
 
   const grouped = kitchens.reduce<Record<Kitchen, MenuItem[]>>((acc, k) => {
@@ -126,8 +126,8 @@ export default function MenuManagementPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1.5">Kategori Dapur</label>
-                <div className="grid grid-cols-3 gap-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Kategori Menu</label>
+                <div className="grid grid-cols-2 gap-2">
                   {kitchens.map(k => {
                     const c = KITCHEN_COLORS[k];
                     return (
