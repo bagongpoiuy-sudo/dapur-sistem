@@ -12,6 +12,7 @@ interface WaiterDraft {
   selectedKitchen: Kitchen;
   tableNumber: string;
   waiterName: string;
+  customerName: string;
   foodNotes: string;
   drinkNotes: string;
   foodNotesKitchen: Kitchen | '';
@@ -32,6 +33,7 @@ function loadWaiterDraft(): WaiterDraft {
     selectedKitchen: 'cafe',
     tableNumber: '',
     waiterName: '',
+    customerName: '',
     foodNotes: '',
     drinkNotes: '',
     foodNotesKitchen: '',
@@ -83,6 +85,7 @@ function loadWaiterDraft(): WaiterDraft {
       selectedKitchen: isKitchen(draft.selectedKitchen) ? draft.selectedKitchen : 'cafe',
       tableNumber: typeof draft.tableNumber === 'string' ? draft.tableNumber : '',
       waiterName: typeof draft.waiterName === 'string' ? draft.waiterName : '',
+      customerName: typeof draft.customerName === 'string' ? draft.customerName : '',
       foodNotes: typeof draft.foodNotes === 'string' ? draft.foodNotes : '',
       drinkNotes: typeof draft.drinkNotes === 'string' ? draft.drinkNotes : '',
       foodNotesKitchen: draft.foodNotesKitchen === '' || isKitchen(draft.foodNotesKitchen) ? draft.foodNotesKitchen : '',
@@ -101,6 +104,7 @@ export default function WaiterPage() {
   const [selectedKitchen, setSelectedKitchen] = useState<Kitchen>(draft.selectedKitchen);
   const [tableNumber, setTableNumber] = useState(draft.tableNumber);
   const [waiterName, setWaiterName] = useState(draft.waiterName);
+  const [customerName, setCustomerName] = useState(draft.customerName);
   const [foodNotes, setFoodNotes] = useState(draft.foodNotes);
   const [drinkNotes, setDrinkNotes] = useState(draft.drinkNotes);
   const [foodNotesKitchen, setFoodNotesKitchen] = useState<Kitchen | ''>(draft.foodNotesKitchen);
@@ -120,6 +124,7 @@ export default function WaiterPage() {
         selectedKitchen,
         tableNumber,
         waiterName,
+        customerName,
         foodNotes,
         drinkNotes,
         foodNotesKitchen,
@@ -128,7 +133,7 @@ export default function WaiterPage() {
     } catch (error) {
       console.warn('Gagal menyimpan draft pesanan pelayan.', error);
     }
-  }, [cart, selectedKitchen, tableNumber, waiterName, foodNotes, drinkNotes, foodNotesKitchen, drinkNotesKitchen]);
+  }, [cart, selectedKitchen, tableNumber, waiterName, customerName, foodNotes, drinkNotes, foodNotesKitchen, drinkNotesKitchen]);
 
   async function fetchMenu() {
     setLoading(true);
@@ -193,6 +198,7 @@ export default function WaiterPage() {
       const { data: order, error: orderErr } = await supabase.from('orders').insert({
         table_number: tableNumber.trim(),
         waiter_name: waiterName.trim(),
+        customer_name: customerName.trim(),
         kitchen,
         notes,
         status: 'pending',
@@ -272,7 +278,7 @@ export default function WaiterPage() {
         <div className="lg:col-span-2 space-y-4">
           {/* Info */}
           <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1.5"><Table2 size={12} className="inline mr-1" />Nomor Meja</label>
                 <input
@@ -290,6 +296,16 @@ export default function WaiterPage() {
                   value={waiterName}
                   onChange={e => setWaiterName(e.target.value)}
                   placeholder="cth: Budi"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5"><User size={12} className="inline mr-1" />Nama Pelanggan (opsional)</label>
+                <input
+                  type="text"
+                  value={customerName}
+                  onChange={e => setCustomerName(e.target.value)}
+                  placeholder="cth: Ibu Sari"
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                 />
               </div>

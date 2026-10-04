@@ -21,6 +21,7 @@ export interface Order {
   id: string;
   table_number: string;
   waiter_name: string;
+  customer_name: string;
   status: OrderStatus;
   kitchen: Kitchen;
   notes: string;
@@ -46,6 +47,7 @@ export interface CashierReceipt {
   receipt_number: string;
   table_number: string;
   waiter_name: string;
+  customer_name: string;
   cashier_name?: string;
   total_amount: number;
   items_snapshot: ReceiptItem[];

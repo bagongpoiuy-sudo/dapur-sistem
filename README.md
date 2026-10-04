@@ -9,3 +9,11 @@ Sistem pemesanan restoran dengan cetak struk ESC/POS melalui Bluetooth Low Energ
 3. Pasangkan struk lewat **Preview** atau **Bayar & Simpan**.
 
 Printer harus menampilkan layanan BLE dan characteristic tulis yang cocok dengan salah satu profil POS80D di `src/lib/bluetoothPrinter.ts`. Profil yang dikonfigurasi meliputi service `0x18F0`/characteristic `0x2AF1` serta dua UUID vendor. POS80D harus mendukung ESC/POS.
+
+## Database
+
+Sebelum menggunakan input nama pelanggan, jalankan migrasi `supabase/migrations/20261003200000_add_customer_name_to_orders_and_receipts.sql` pada database Supabase.
+
+## Edit pesanan dan riwayat nota
+
+Pesanan yang belum dibayar dapat diedit dari halaman Kasir: jumlah item bisa diubah, item bisa dihapus, dan menu tersedia bisa ditambahkan. Pesanan tambahan untuk dapur Cafe/Restoran harus diselesaikan dapur sebelum pembayaran diaktifkan. Tab **Riwayat Pesanan** di Laporan menampilkan nota tersimpan secara berhalaman dan memungkinkan koreksi informasi serta item nota; total dan rekap laporan dihitung ulang setelah koreksi.

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Loader2, BookOpen, ToggleLeft, ToggleRight, Save, X } from 'lucide-react';
+import { Plus, Trash2, Loader2, BookOpen, ToggleLeft, ToggleRight, Save, X, Pencil } from 'lucide-react';
 import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency } from '../lib/supabase';
 
 interface NewItem {
@@ -15,6 +15,7 @@ export default function MenuManagementPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [newItem, setNewItem] = useState<NewItem>({ name: '', price: '', category: 'cafe' });
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [filterKitchen, setFilterKitchen] = useState<Kitchen | 'all'>('all');
   const [error, setError] = useState('');
 
@@ -29,26 +30,46 @@ export default function MenuManagementPage() {
     setLoading(false);
   }
 
-  async function addItem() {
+  async function saveItem() {
     setError('');
     if (!newItem.name.trim()) return setError('Nama menu harus diisi');
     const price = parseFloat(newItem.price);
     if (isNaN(price) || price < 0) return setError('Harga tidak valid');
 
     setSaving(true);
-    const { error: err } = await supabase.from('menu_items').insert({
+    const itemData = {
       name: newItem.name.trim(),
       price,
       category: newItem.category,
-      is_available: true,
-    });
+    };
+    const { error: err } = editingItemId
+      ? await supabase.from('menu_items').update(itemData).eq('id', editingItemId)
+      : await supabase.from('menu_items').insert({ ...itemData, is_available: true });
 
-    if (err) { setError('Gagal menambah menu'); setSaving(false); return; }
+    if (err) {
+      setError(`Gagal ${editingItemId ? 'mengubah' : 'menambah'} menu: ${err.message}`);
+      setSaving(false);
+      return;
+    }
 
     setNewItem({ name: '', price: '', category: newItem.category });
+    setEditingItemId(null);
     setShowForm(false);
-    fetchItems();
+    await fetchItems();
     setSaving(false);
+  }
+
+  function editItem(item: MenuItem) {
+    setNewItem({ name: item.name, price: String(item.price), category: item.category });
+    setEditingItemId(item.id);
+    setError('');
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingItemId(null);
+    setError('');
   }
 
   async function toggleAvailability(item: MenuItem) {
@@ -83,7 +104,12 @@ export default function MenuManagementPage() {
           <p className="text-gray-500 text-sm mt-1">Tambah, edit ketersediaan, dan hapus menu</p>
         </div>
         <button
-          onClick={() => { setShowForm(true); setError(''); }}
+          onClick={() => {
+            setNewItem({ name: '', price: '', category: 'cafe' });
+            setEditingItemId(null);
+            setShowForm(true);
+            setError('');
+          }}
           className="flex items-center gap-2 px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl transition-colors text-sm"
         >
           <Plus size={16} />
@@ -96,8 +122,8 @@ export default function MenuManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-gray-900">Tambah Menu Baru</h2>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600">
+              <h2 className="text-lg font-bold text-gray-900">{editingItemId ? 'Edit Menu' : 'Tambah Menu Baru'}</h2>
+              <button onClick={closeForm} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
             </div>
@@ -148,11 +174,11 @@ export default function MenuManagementPage() {
               {error && <p className="text-sm text-red-500">{error}</p>}
 
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 border border-gray-200 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors">
+                <button onClick={closeForm} className="flex-1 py-2.5 border border-gray-200 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors">
                   Batal
                 </button>
                 <button
-                  onClick={addItem}
+                  onClick={saveItem}
                   disabled={saving}
                   className="flex-1 py-2.5 bg-teal-500 hover:bg-teal-600 disabled:bg-teal-300 text-white font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors"
                 >
@@ -230,6 +256,13 @@ export default function MenuManagementPage() {
                             title="Toggle ketersediaan"
                           >
                             {item.is_available ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                          </button>
+                          <button
+                            onClick={() => editItem(item)}
+                            className="text-teal-500 hover:text-teal-700 transition-colors"
+                            title="Edit menu"
+                          >
+                            <Pencil size={16} />
                           </button>
                           <button
                             onClick={() => deleteItem(item.id)}
