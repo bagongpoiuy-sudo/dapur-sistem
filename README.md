@@ -13,7 +13,9 @@ Printer harus menampilkan layanan BLE dan characteristic tulis yang cocok dengan
 ## Database
 
 Sebelum menggunakan input nama pelanggan, jalankan migrasi `supabase/migrations/20261003200000_add_customer_name_to_orders_and_receipts.sql` pada database Supabase.
+Untuk diskon menu, jalankan juga `supabase/migrations/20261004110000_add_menu_discount_percent.sql`. Diskon dimasukkan sebagai persentase 0-100; harga pelanggan adalah harga menu setelah diskon dan dibulatkan ke Rupiah penuh.
 
 ## Edit pesanan dan riwayat nota
 
 Pesanan yang belum dibayar dapat diedit dari halaman Kasir: jumlah item bisa diubah, item bisa dihapus, dan menu tersedia bisa ditambahkan. Pesanan tambahan untuk dapur Cafe/Restoran harus diselesaikan dapur sebelum pembayaran diaktifkan. Tab **Riwayat Pesanan** di Laporan menampilkan nota tersimpan secara berhalaman dan memungkinkan koreksi informasi serta item nota; total dan rekap laporan dihitung ulang setelah koreksi.
+Riwayat nota dapat ditampilkan per hari kalender atau per minggu, dengan navigasi ke periode sebelumnya dan pencarian pada periode yang sedang dibuka.

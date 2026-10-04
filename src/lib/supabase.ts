@@ -12,6 +12,7 @@ export interface MenuItem {
   id: string;
   name: string;
   price: number;
+  discount_percent: number;
   category: Kitchen;
   is_available: boolean;
   created_at: string;
@@ -79,6 +80,10 @@ export const KITCHEN_COLORS: Record<Kitchen, { bg: string; text: string; border:
 
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
+}
+
+export function getDiscountedPrice(item: Pick<MenuItem, 'price' | 'discount_percent'>): number {
+  return Math.round(item.price * (1 - item.discount_percent / 100));
 }
 
 export function generateReceiptNumber(): string {

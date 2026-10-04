@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Loader2, BookOpen, ToggleLeft, ToggleRight, Save, X, Pencil } from 'lucide-react';
-import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency } from '../lib/supabase';
+import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, getDiscountedPrice } from '../lib/supabase';
 
 interface NewItem {
   name: string;
   price: string;
+  discountPercent: string;
   category: Kitchen;
 }
 
@@ -14,7 +15,7 @@ export default function MenuManagementPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [newItem, setNewItem] = useState<NewItem>({ name: '', price: '', category: 'cafe' });
+  const [newItem, setNewItem] = useState<NewItem>({ name: '', price: '', discountPercent: '0', category: 'cafe' });
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [filterKitchen, setFilterKitchen] = useState<Kitchen | 'all'>('all');
   const [error, setError] = useState('');
@@ -35,11 +36,16 @@ export default function MenuManagementPage() {
     if (!newItem.name.trim()) return setError('Nama menu harus diisi');
     const price = parseFloat(newItem.price);
     if (isNaN(price) || price < 0) return setError('Harga tidak valid');
+    const discountPercent = Number(newItem.discountPercent);
+    if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+      return setError('Diskon harus antara 0 sampai 100 persen');
+    }
 
     setSaving(true);
     const itemData = {
       name: newItem.name.trim(),
       price,
+      discount_percent: discountPercent,
       category: newItem.category,
     };
     const { error: err } = editingItemId
@@ -52,7 +58,7 @@ export default function MenuManagementPage() {
       return;
     }
 
-    setNewItem({ name: '', price: '', category: newItem.category });
+    setNewItem({ name: '', price: '', discountPercent: '0', category: newItem.category });
     setEditingItemId(null);
     setShowForm(false);
     await fetchItems();
@@ -60,7 +66,7 @@ export default function MenuManagementPage() {
   }
 
   function editItem(item: MenuItem) {
-    setNewItem({ name: item.name, price: String(item.price), category: item.category });
+    setNewItem({ name: item.name, price: String(item.price), discountPercent: String(item.discount_percent), category: item.category });
     setEditingItemId(item.id);
     setError('');
     setShowForm(true);
@@ -105,7 +111,7 @@ export default function MenuManagementPage() {
         </div>
         <button
           onClick={() => {
-            setNewItem({ name: '', price: '', category: 'cafe' });
+            setNewItem({ name: '', price: '', discountPercent: '0', category: 'cafe' });
             setEditingItemId(null);
             setShowForm(true);
             setError('');
@@ -150,6 +156,22 @@ export default function MenuManagementPage() {
                   min="0"
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Diskon (%)</label>
+                <input
+                  type="number"
+                  value={newItem.discountPercent}
+                  onChange={e => setNewItem(p => ({ ...p, discountPercent: e.target.value }))}
+                  placeholder="0"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Harga setelah diskon: {formatCurrency(Math.round((Number(newItem.price) || 0) * (1 - (Number(newItem.discountPercent) || 0) / 100)))}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1.5">Kategori Menu</label>
@@ -244,7 +266,11 @@ export default function MenuManagementPage() {
                       <div key={item.id} className={`flex items-center px-5 py-3 gap-4 transition-colors ${!item.is_available ? 'opacity-50' : ''}`}>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 text-sm">{item.name}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">{formatCurrency(item.price)}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {item.discount_percent > 0 && <span className="mr-1 line-through">{formatCurrency(item.price)}</span>}
+                            <span className={item.discount_percent > 0 ? 'font-semibold text-rose-600' : ''}>{formatCurrency(getDiscountedPrice(item))}</span>
+                            {item.discount_percent > 0 && <span className="ml-1 font-medium text-rose-600">Diskon {item.discount_percent}%</span>}
+                          </p>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${item.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>

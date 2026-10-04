@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, Printer, Loader2, RefreshCw, CreditCard, Table2, User, ChevronDown, ChevronUp, Lock, Unlock, Pencil, Save, X } from 'lucide-react';
-import { supabase, Order, OrderItem, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, generateReceiptNumber } from '../lib/supabase';
+import { supabase, Order, OrderItem, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, generateReceiptNumber, getDiscountedPrice } from '../lib/supabase';
 import { connectBluetoothPrinter, getBluetoothPrinterName, isBluetoothPrinterConnected, isBluetoothPrinterSupported, printBluetoothReceipt } from '../lib/bluetoothPrinter';
 
 interface OrderItemDraft {
@@ -622,7 +622,7 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
                   setOrderItemDraft(prev => [...prev, {
                     menuItemId: menuItem.id,
                     name: menuItem.name,
-                    price: menuItem.price,
+                    price: getDiscountedPrice(menuItem),
                     quantity: 1,
                     kitchen: menuItem.category,
                   }]);

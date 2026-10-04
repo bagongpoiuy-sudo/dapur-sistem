@@ -19,6 +19,33 @@ interface ReceiptEditor {
   items: ReceiptItem[];
 }
 
+function getHistoryRange(period: ReportType, offset: number): { start: Date; end: Date; label: string } {
+  const start = new Date();
+  if (period === 'daily') {
+    start.setDate(start.getDate() - offset);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    end.setMilliseconds(end.getMilliseconds() - 1);
+    return {
+      start,
+      end,
+      label: start.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+    };
+  }
+
+  start.setDate(start.getDate() - start.getDay() - offset * 7);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
+  end.setMilliseconds(end.getMilliseconds() - 1);
+  return {
+    start,
+    end,
+    label: `${start.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+  };
+}
+
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<'reports' | 'history'>('reports');
   const [reportType, setReportType] = useState<ReportType>('daily');
@@ -30,6 +57,8 @@ export default function ReportsPage() {
   const [historyPage, setHistoryPage] = useState(0);
   const [historyCount, setHistoryCount] = useState(0);
   const [historySearch, setHistorySearch] = useState('');
+  const [historyPeriod, setHistoryPeriod] = useState<ReportType>('daily');
+  const [historyOffset, setHistoryOffset] = useState(0);
   const [receiptEditor, setReceiptEditor] = useState<ReceiptEditor | null>(null);
   const [savingReceipt, setSavingReceipt] = useState(false);
   const historyPageSize = 50;
@@ -80,10 +109,13 @@ export default function ReportsPage() {
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
+    const { start: historyStart, end: historyEnd } = getHistoryRange(historyPeriod, historyOffset);
     const from = historyPage * historyPageSize;
     const { data, count, error } = await supabase
       .from('cashier_receipts')
       .select('*', { count: 'exact' })
+      .gte('paid_at', historyStart.toISOString())
+      .lte('paid_at', historyEnd.toISOString())
       .order('paid_at', { ascending: false })
       .range(from, from + historyPageSize - 1);
     if (error) {
@@ -93,7 +125,7 @@ export default function ReportsPage() {
       setHistoryCount(count || 0);
     }
     setHistoryLoading(false);
-  }, [historyPage]);
+  }, [historyPage, historyPeriod, historyOffset]);
 
   useEffect(() => {
     if (activeTab === 'history') void fetchHistory();
@@ -274,17 +306,48 @@ ${Object.entries(dailyData).map(([d, v]) => `<tr><td>${d}</td><td>${formatCurren
           <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-semibold text-gray-900">Riwayat Nota</h2>
-              <p className="text-xs text-gray-500">Koreksi nota akan memperbarui detail dan rekap laporan. Menampilkan {historyCount} transaksi.</p>
+              <p className="text-xs text-gray-500">{getHistoryRange(historyPeriod, historyOffset).label} · Koreksi nota akan memperbarui detail dan rekap laporan. {historyCount} transaksi.</p>
             </div>
-            <label className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2">
-              <Search size={16} className="text-gray-400" />
-              <input
-                value={historySearch}
-                onChange={event => setHistorySearch(event.target.value)}
-                placeholder="Cari di halaman ini"
-                className="min-w-0 text-sm outline-none"
-              />
-            </label>
+            <div className="flex flex-col gap-2 sm:items-end">
+              <div className="flex gap-1 rounded-xl bg-gray-100 p-1">
+                {(['daily', 'weekly'] as const).map(period => (
+                  <button
+                    key={period}
+                    onClick={() => { setHistoryPeriod(period); setHistoryOffset(0); setHistoryPage(0); }}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${historyPeriod === period ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+                  >
+                    {period === 'daily' ? 'Per Hari' : 'Per Minggu'}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setHistoryOffset(value => value + 1); setHistoryPage(0); }}
+                  aria-label="Lihat periode sebelumnya"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="min-w-40 text-center text-xs font-medium text-gray-600">{getHistoryRange(historyPeriod, historyOffset).label}</span>
+                <button
+                  onClick={() => { setHistoryOffset(value => Math.max(0, value - 1)); setHistoryPage(0); }}
+                  disabled={historyOffset === 0}
+                  aria-label="Lihat periode berikutnya"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-40"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+              <label className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2">
+                <Search size={16} className="text-gray-400" />
+                <input
+                  value={historySearch}
+                  onChange={event => setHistorySearch(event.target.value)}
+                  placeholder="Cari di periode ini"
+                  className="min-w-0 text-sm outline-none"
+                />
+              </label>
+            </div>
           </div>
           {historyLoading ? (
             <div className="flex justify-center py-20"><Loader2 size={30} className="animate-spin text-gray-400" /></div>

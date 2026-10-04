@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Minus, Trash2, Send, ShoppingCart, User, Table2, StickyNote, RefreshCw } from 'lucide-react';
-import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency } from '../lib/supabase';
+import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, getDiscountedPrice } from '../lib/supabase';
 
 interface CartItem {
   menuItem: MenuItem;
@@ -59,6 +59,7 @@ function loadWaiterDraft(): WaiterDraft {
           typeof menuItem.name !== 'string' ||
           typeof menuItem.price !== 'number' ||
           !Number.isFinite(menuItem.price) ||
+          (menuItem.discount_percent !== undefined && (typeof menuItem.discount_percent !== 'number' || !Number.isFinite(menuItem.discount_percent))) ||
           !isKitchen(menuItem.category) ||
           typeof menuItem.is_available !== 'boolean' ||
           typeof menuItem.created_at !== 'string' ||
@@ -71,6 +72,7 @@ function loadWaiterDraft(): WaiterDraft {
             id: menuItem.id,
             name: menuItem.name,
             price: menuItem.price,
+            discount_percent: typeof menuItem.discount_percent === 'number' ? menuItem.discount_percent : 0,
             category: menuItem.category,
             is_available: menuItem.is_available,
             created_at: menuItem.created_at,
@@ -167,7 +169,7 @@ export default function WaiterPage() {
     return acc;
   }, {} as Record<Kitchen, CartItem[]>);
 
-  const total = cart.reduce((sum, c) => sum + c.menuItem.price * c.quantity, 0);
+  const total = cart.reduce((sum, c) => sum + getDiscountedPrice(c.menuItem) * c.quantity, 0);
 
   async function submitOrder() {
     if (!tableNumber.trim()) return alert('Masukkan nomor meja!');
@@ -216,9 +218,9 @@ export default function WaiterPage() {
         order_id: order.id,
         menu_item_id: c.menuItem.id,
         menu_item_name: c.menuItem.name,
-        menu_item_price: c.menuItem.price,
+        menu_item_price: getDiscountedPrice(c.menuItem),
         quantity: c.quantity,
-        subtotal: c.menuItem.price * c.quantity,
+        subtotal: getDiscountedPrice(c.menuItem) * c.quantity,
         kitchen,
       }));
 
@@ -367,7 +369,11 @@ export default function WaiterPage() {
                         </span>
                       )}
                       <p className={`text-sm font-semibold ${inCart ? c.text : 'text-gray-800'} pr-6`}>{item.name}</p>
-                      <p className="text-xs text-gray-500 mt-1">{formatCurrency(item.price)}</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {item.discount_percent > 0 && <span className="mr-1 line-through">{formatCurrency(item.price)}</span>}
+                        <span className={item.discount_percent > 0 ? 'font-semibold text-rose-600' : ''}>{formatCurrency(getDiscountedPrice(item))}</span>
+                        {item.discount_percent > 0 && <span className="ml-1 text-rose-600">{item.discount_percent}% off</span>}
+                      </p>
                     </button>
                   );
                 })}
@@ -406,7 +412,10 @@ export default function WaiterPage() {
                           <div key={c.menuItem.id} className="flex items-center gap-2">
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-800 truncate">{c.menuItem.name}</p>
-                              <p className="text-xs text-gray-400">{formatCurrency(c.menuItem.price)}</p>
+                              <p className="text-xs text-gray-400">
+                                {c.menuItem.discount_percent > 0 && <span className="mr-1 line-through">{formatCurrency(c.menuItem.price)}</span>}
+                                <span className={c.menuItem.discount_percent > 0 ? 'font-semibold text-rose-600' : ''}>{formatCurrency(getDiscountedPrice(c.menuItem))}</span>
+                              </p>
                             </div>
                             <div className="flex items-center gap-1">
                               <button onClick={() => updateQty(c.menuItem.id, -1)} className="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors">
