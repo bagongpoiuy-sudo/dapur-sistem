@@ -20,11 +20,11 @@ interface WaiterDraft {
 }
 
 const waiterDraftKey = 'waiter_order_draft';
-const orderCategories: Kitchen[] = ['cafe', 'pentri', 'prasmanan', 'restoran'];
+const orderCategories: Kitchen[] = ['cafe', 'pastry', 'prasmanan', 'restoran'];
 const kitchens: Kitchen[] = ['cafe', 'restoran'];
 
 function isKitchen(value: unknown): value is Kitchen {
-  return value === 'cafe' || value === 'pentri' || value === 'prasmanan' || value === 'restoran';
+  return value === 'cafe' || value === 'pastry' || value === 'prasmanan' || value === 'restoran';
 }
 
 function loadWaiterDraft(): WaiterDraft {
@@ -234,7 +234,7 @@ export default function WaiterPage() {
         }
       }
 
-      if (kitchen === 'pentri' || kitchen === 'prasmanan') {
+      if (kitchen === 'pastry' || kitchen === 'prasmanan') {
         const { error: statusError } = await supabase.from('orders')
           .update({ status: 'done', updated_at: new Date().toISOString() })
           .eq('id', order.id);
@@ -248,7 +248,7 @@ export default function WaiterPage() {
     }
 
     const destinations = new Set([...orderKitchens].map(k => (
-      k === 'pentri' || k === 'prasmanan' ? 'Kasir' : KITCHEN_LABELS[k]
+      k === 'pastry' || k === 'prasmanan' ? 'Kasir' : KITCHEN_LABELS[k]
     )));
     setSuccessMsg(`Pesanan untuk Meja ${tableNumber} berhasil dikirim ke ${[...destinations].join(', ')}!`);
     setCart([]);
@@ -336,7 +336,7 @@ export default function WaiterPage() {
           <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-800">
-                {selectedKitchen === 'pentri' || selectedKitchen === 'prasmanan'
+                {selectedKitchen === 'pastry' || selectedKitchen === 'prasmanan'
                   ? `${KITCHEN_LABELS[selectedKitchen]} · langsung ke Kasir`
                   : KITCHEN_LABELS[selectedKitchen]}
               </h2>

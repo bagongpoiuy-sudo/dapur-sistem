@@ -202,7 +202,7 @@ export default function ReportsPage() {
   });
 
   const products = Object.values(productMap).sort((a, b) => b.revenue - a.revenue);
-  const kitchens: Kitchen[] = ['cafe', 'pentri', 'prasmanan', 'restoran'];
+  const kitchens: Kitchen[] = ['cafe', 'pastry', 'prasmanan', 'restoran'];
 
   const kitchenStats = kitchens.map(k => ({
     kitchen: k,
@@ -566,7 +566,7 @@ ${Object.entries(dailyData).map(([d, v]) => `<tr><td>${d}</td><td>${formatCurren
                     <input aria-label="Harga item" type="number" min="0" value={item.price} onChange={event => setReceiptEditor(prev => prev && ({ ...prev, items: prev.items.map((row, i) => i === index ? { ...row, price: Number(event.target.value) } : row) }))} className="rounded-lg border border-gray-200 px-2 py-2 text-sm" />
                     <input aria-label="Jumlah item" type="number" min="1" step="1" value={item.quantity} onChange={event => setReceiptEditor(prev => prev && ({ ...prev, items: prev.items.map((row, i) => i === index ? { ...row, quantity: Number(event.target.value) } : row) }))} className="rounded-lg border border-gray-200 px-2 py-2 text-sm" />
                     <select aria-label="Kategori dapur" value={item.kitchen} onChange={event => setReceiptEditor(prev => prev && ({ ...prev, items: prev.items.map((row, i) => i === index ? { ...row, kitchen: event.target.value as Kitchen } : row) }))} className="rounded-lg border border-gray-200 px-2 py-2 text-sm">
-                      {(['cafe', 'pentri', 'prasmanan', 'restoran'] as Kitchen[]).map(kitchen => <option key={kitchen} value={kitchen}>{KITCHEN_LABELS[kitchen]}</option>)}
+                      {(['cafe', 'pastry', 'prasmanan', 'restoran'] as Kitchen[]).map(kitchen => <option key={kitchen} value={kitchen}>{KITCHEN_LABELS[kitchen]}</option>)}
                     </select>
                   </div>
                   <div className="mt-2 flex items-center justify-between">

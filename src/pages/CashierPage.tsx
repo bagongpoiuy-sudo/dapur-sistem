@@ -132,7 +132,7 @@ export default function CashierPage() {
     items: { name: string; price: number; quantity: number; subtotal: number; kitchen: Kitchen }[];
     total: number;
   }) {
-    const kitchens: Kitchen[] = ['cafe', 'pentri', 'prasmanan', 'restoran'];
+    const kitchens: Kitchen[] = ['cafe', 'pastry', 'prasmanan', 'restoran'];
     const grouped = kitchens.reduce<Record<string, typeof items>>((acc, k) => {
       acc[k] = items.filter(i => i.kitchen === k);
       return acc;
@@ -318,7 +318,7 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
             customer_name: mainOrder.customer_name,
             kitchen,
             notes: '',
-            status: kitchen === 'pentri' || kitchen === 'prasmanan' ? 'done' : 'pending',
+            status: kitchen === 'pastry' || kitchen === 'prasmanan' ? 'done' : 'pending',
           }).select().single();
           if (error || !data) {
             failure = error?.message || 'Pesanan baru tidak berhasil dibuat.';

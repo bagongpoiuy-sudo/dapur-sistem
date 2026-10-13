@@ -7,7 +7,7 @@
       - `id` (uuid, primary key)
       - `name` (text) - menu item name
       - `price` (numeric) - price
-      - `category` (text) - 'cafe', 'pentri', 'restoran'
+      - `category` (text) - 'cafe', 'pastry', 'restoran'
       - `is_available` (boolean) - whether item is available
       - `created_at` (timestamp)
 
@@ -16,7 +16,7 @@
       - `table_number` (text) - table or customer identifier
       - `waiter_name` (text)
       - `status` (text) - 'pending', 'processing', 'done', 'paid'
-      - `kitchen` (text) - 'cafe', 'pentri', 'restoran'
+      - `kitchen` (text) - 'cafe', 'pastry', 'restoran'
       - `notes` (text)
       - `created_at` (timestamp)
       - `updated_at` (timestamp)
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   price numeric(10,2) NOT NULL DEFAULT 0,
-  category text NOT NULL CHECK (category IN ('cafe', 'pentri', 'restoran')),
+  category text NOT NULL CHECK (category IN ('cafe', 'pastry', 'restoran')),
   is_available boolean NOT NULL DEFAULT true,
   created_at timestamptz DEFAULT now()
 );
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS orders (
   table_number text NOT NULL DEFAULT '',
   waiter_name text NOT NULL DEFAULT '',
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'done', 'paid')),
-  kitchen text NOT NULL CHECK (kitchen IN ('cafe', 'pentri', 'restoran')),
+  kitchen text NOT NULL CHECK (kitchen IN ('cafe', 'pastry', 'restoran')),
   notes text NOT NULL DEFAULT '',
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   menu_item_price numeric(10,2) NOT NULL DEFAULT 0,
   quantity int NOT NULL DEFAULT 1 CHECK (quantity > 0),
   subtotal numeric(10,2) NOT NULL DEFAULT 0,
-  kitchen text NOT NULL CHECK (kitchen IN ('cafe', 'pentri', 'restoran')),
+  kitchen text NOT NULL CHECK (kitchen IN ('cafe', 'pastry', 'restoran')),
   created_at timestamptz DEFAULT now()
 );
 
@@ -198,15 +198,15 @@ INSERT INTO menu_items (name, price, category) VALUES
   ('Teh Tarik', 12000, 'cafe'),
   ('Juice Jeruk', 15000, 'cafe'),
   ('Milkshake Coklat', 30000, 'cafe'),
-  -- Pentri items (bread & pastries)
-  ('Roti Bakar', 12000, 'pentri'),
-  ('Croissant', 18000, 'pentri'),
-  ('Sandwich Ayam', 25000, 'pentri'),
-  ('Toast Keju', 15000, 'pentri'),
-  ('Roti Pisang', 14000, 'pentri'),
-  ('Donat', 10000, 'pentri'),
-  ('Bruschetta', 20000, 'pentri'),
-  ('Club Sandwich', 30000, 'pentri'),
+  -- Pastry items (bread & pastries)
+  ('Roti Bakar', 12000, 'pastry'),
+  ('Croissant', 18000, 'pastry'),
+  ('Sandwich Ayam', 25000, 'pastry'),
+  ('Toast Keju', 15000, 'pastry'),
+  ('Roti Pisang', 14000, 'pastry'),
+  ('Donat', 10000, 'pastry'),
+  ('Bruschetta', 20000, 'pastry'),
+  ('Club Sandwich', 30000, 'pastry'),
   -- Restoran items (food & drinks)
   ('Nasi Goreng', 30000, 'restoran'),
   ('Mie Goreng', 28000, 'restoran'),

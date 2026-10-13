@@ -91,7 +91,7 @@ export default function MenuManagementPage() {
     setDeleting(null);
   }
 
-  const kitchens: Kitchen[] = ['cafe', 'pentri', 'prasmanan', 'restoran'];
+  const kitchens: Kitchen[] = ['cafe', 'pastry', 'prasmanan', 'restoran'];
   const filtered = items.filter(i => filterKitchen === 'all' || i.category === filterKitchen);
 
   const grouped = kitchens.reduce<Record<Kitchen, MenuItem[]>>((acc, k) => {
