@@ -8,6 +8,20 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export type Kitchen = 'cafe' | 'pastry' | 'prasmanan' | 'restoran';
 export type OrderStatus = 'pending' | 'processing' | 'done' | 'paid';
 
+export function normalizeKitchen(value: string | null | undefined): Kitchen {
+  switch (value) {
+    case 'cafe':
+    case 'pastry':
+    case 'prasmanan':
+    case 'restoran':
+      return value;
+    case 'pentri':
+      return 'pastry';
+    default:
+      return 'cafe';
+  }
+}
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -51,6 +65,8 @@ export interface CashierReceipt {
   customer_name: string;
   cashier_name?: string;
   total_amount: number;
+  amount_paid?: number;
+  payment_method?: 'cash' | 'qris' | 'transfer';
   items_snapshot: ReceiptItem[];
   paid_at: string;
   created_at: string;

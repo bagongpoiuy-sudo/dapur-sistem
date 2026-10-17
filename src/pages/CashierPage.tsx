@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, Printer, Loader2, RefreshCw, CreditCard, Table2, User, ChevronDown, ChevronUp, Lock, Unlock, Pencil, Save, X } from 'lucide-react';
-import { supabase, Order, OrderItem, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, generateReceiptNumber, getDiscountedPrice } from '../lib/supabase';
-import { connectBluetoothPrinter, getBluetoothPrinterName, isBluetoothPrinterConnected, isBluetoothPrinterSupported, printBluetoothReceipt } from '../lib/bluetoothPrinter';
+import { supabase, Order, OrderItem, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, generateReceiptNumber, getDiscountedPrice, normalizeKitchen } from '../lib/supabase';
+import { connectBluetoothPrinter, getBluetoothPrinterName, isBluetoothPrinterConnected, isBluetoothPrinterSupported } from '../lib/bluetoothPrinter';
+import { PaymentMethod, printReceipt } from '../lib/receiptPrinter';
 
 interface OrderItemDraft {
   id?: string;
@@ -29,6 +30,8 @@ export default function CashierPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [newMenuItemId, setNewMenuItemId] = useState('');
   const [savingOrder, setSavingOrder] = useState(false);
+  const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({});
+  const [paymentMethods, setPaymentMethods] = useState<Record<string, PaymentMethod>>({});
 
   const fetchOrders = useCallback(async () => {
     const { data } = await supabase
@@ -36,7 +39,15 @@ export default function CashierPage() {
       .select('*, order_items(*)')
       .neq('status', 'paid')
       .order('updated_at', { ascending: false });
-    setOrders(data || []);
+
+    setOrders((data || []).map((order: any) => ({
+      ...order,
+      kitchen: normalizeKitchen(order.kitchen),
+      order_items: (order.order_items || []).map((item: any) => ({
+        ...item,
+        kitchen: normalizeKitchen(item.kitchen),
+      })),
+    })));
     setLoading(false);
   }, []);
 
@@ -90,7 +101,6 @@ export default function CashierPage() {
       return;
     }
     const { table_number: tableNumber, waiter_name: waiterName, customer_name: customerName } = tableOrders[0];
-    setPaying(tableKey);
 
     const allItems = tableOrders.flatMap(o =>
       (o.order_items || []).map(i => ({
@@ -98,124 +108,72 @@ export default function CashierPage() {
         price: i.menu_item_price,
         quantity: i.quantity,
         subtotal: i.subtotal,
-        kitchen: i.kitchen as Kitchen,
+        kitchen: normalizeKitchen(i.kitchen),
       }))
     );
 
-    const total = allItems.reduce((s, i) => s + i.subtotal, 0);
+    const total = allItems.reduce((s, i) => s + Number(i.subtotal), 0);
+    const amountPaid = Number(paymentAmounts[tableKey] ?? total);
+    const paymentMethod = paymentMethods[tableKey] ?? 'cash';
+    if (!Number.isFinite(amountPaid) || amountPaid < total) {
+      alert('Nominal pembayaran tidak boleh kurang dari total belanja.');
+      return;
+    }
+    if (paymentMethod !== 'cash' && amountPaid !== total) {
+      alert('Untuk pembayaran QRIS atau transfer, nominal pembayaran harus sama dengan total belanja.');
+      return;
+    }
     const receiptNumber = generateReceiptNumber();
 
-      await supabase.from('cashier_receipts').insert({
+    setPaying(tableKey);
+    const paidAt = new Date().toISOString();
+    const { error: receiptError } = await supabase.from('cashier_receipts').insert({
+      receipt_number: receiptNumber,
+      table_number: tableNumber,
+      waiter_name: waiterName,
+      customer_name: customerName,
+      cashier_name: cashierName || '',
+      total_amount: total,
+      amount_paid: amountPaid,
+      payment_method: paymentMethod,
+      items_snapshot: allItems,
+      paid_at: paidAt,
+    });
+    if (receiptError) {
+      setPaying(null);
+      alert(`Gagal menyimpan nota pembayaran: ${receiptError.message}`);
+      return;
+    }
+
+    for (const o of tableOrders) {
+      const { error } = await supabase.from('orders').update({ status: 'paid', updated_at: new Date().toISOString() }).eq('id', o.id);
+      if (error) {
+        setPaying(null);
+        alert(`Nota ${receiptNumber} tersimpan, tetapi status pesanan ${o.id} gagal diperbarui: ${error.message}. Periksa pesanan sebelum mencoba membayar ulang.`);
+        await fetchOrders();
+        return;
+      }
+    }
+
+    setPaying(null);
+    await fetchOrders();
+
+    try {
+      printReceipt({
         receipt_number: receiptNumber,
         table_number: tableNumber,
         waiter_name: waiterName,
         customer_name: customerName,
-        cashier_name: cashierName || '',
+        cashier_name: cashierName,
         total_amount: total,
+        amount_paid: amountPaid,
+        payment_method: paymentMethod,
         items_snapshot: allItems,
-        paid_at: new Date().toISOString(),
+        paid_at: paidAt,
       });
-
-    for (const o of tableOrders) {
-      await supabase.from('orders').update({ status: 'paid', updated_at: new Date().toISOString() }).eq('id', o.id);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Gagal mencetak struk. Cetak ulang dapat dilakukan dari riwayat pesanan.');
     }
-
-    setPaying(null);
-    fetchOrders();
-
-    // Print receipt
-      printReceipt({ receiptNumber, tableNumber, waiterName, customerName, cashierName, items: allItems, total });
-  }
-
-  function printReceipt({ receiptNumber, tableNumber, waiterName, customerName, items, total }: {
-    receiptNumber: string; tableNumber: string; waiterName: string; customerName: string; cashierName?: string;
-    items: { name: string; price: number; quantity: number; subtotal: number; kitchen: Kitchen }[];
-    total: number;
-  }) {
-    const kitchens: Kitchen[] = ['cafe', 'pastry', 'prasmanan', 'restoran'];
-    const grouped = kitchens.reduce<Record<string, typeof items>>((acc, k) => {
-      acc[k] = items.filter(i => i.kitchen === k);
-      return acc;
-    }, {} as Record<string, typeof items>);
-
-    if (isBluetoothPrinterSupported()) {
-      if (!isBluetoothPrinterConnected()) {
-        alert('Hubungkan printer Bluetooth terlebih dahulu sebelum mencetak struk.');
-        return;
-      }
-
-      const width = 48;
-      const line = (left: string, right: string) =>
-        `${left.slice(0, Math.max(0, width - right.length)).padEnd(Math.max(0, width - right.length))}${right}`;
-      const text = [
-        'Resto Kecombrang',
-        'Jl. Pakem - Kalasan, Kledoan,',
-        'Selomartani, Kec. Kalasan,',
-        'Kabupaten Sleman, Daerah Istimewa',
-        'Yogyakarta 55571',
-        'Struk Pembayaran',
-        '-'.repeat(width),
-        line('No. Struk', receiptNumber),
-        line('Meja', tableNumber),
-        ...(customerName ? [line('Pelanggan', customerName)] : []),
-        line('Pelayan', waiterName),
-        line('Kasir', cashierName || ''),
-        line('Waktu', new Date().toLocaleString('id-ID')),
-        '-'.repeat(width),
-        ...kitchens.flatMap(k => grouped[k]?.length
-          ? [`[${KITCHEN_LABELS[k]}]`, ...grouped[k].map(i =>
-            `${i.quantity}x ${i.name}\n${line('', formatCurrency(i.subtotal))}`
-          )]
-          : []),
-        '-'.repeat(width),
-        line('TOTAL', formatCurrency(total)),
-        '',
-        'Terima kasih atas kunjungan Anda!',
-        '',
-        '',
-      ].join('\n');
-
-      void printBluetoothReceipt(text).catch((error: unknown) => {
-        alert(error instanceof Error ? error.message : 'Gagal mengirim struk ke printer.');
-      });
-      return;
-    }
-
-    const html = `
-<!DOCTYPE html><html><head><title>Struk #${receiptNumber}</title>
-<style>
-  body{font-family:monospace;width:100%;max-width:380px;box-sizing:border-box;margin:0 auto;padding:16px;font-size:12px;}
-  h2{text-align:center;margin:0;font-size:16px;}
-  .address{text-align:center;margin:4px 0;font-size:10px;}
-  .divider{border-top:1px dashed #000;margin:8px 0;}
-  .row{display:flex;justify-content:space-between;}
-  .section-title{font-weight:bold;margin:6px 0 3px;}
-  .total{font-weight:bold;font-size:14px;}
-  .footer{text-align:center;margin-top:12px;font-size:11px;}
-  @media print{body{max-width:380px;}}
-</style></head><body>
-<h2>Resto Kecombrang</h2>
-<p class="address">Jl. Pakem - Kalasan, Kledoan, Selomartani, Kec. Kalasan, Kabupaten Sleman, Daerah Istimewa Yogyakarta 55571</p>
-<p style="text-align:center;margin:4px 0;">Struk Pembayaran</p>
-<div class="divider"></div>
-<div class="row"><span>No. Struk</span><span>${receiptNumber}</span></div>
-<div class="row"><span>Meja</span><span>${tableNumber}</span></div>
-${customerName ? `<div class="row"><span>Pelanggan</span><span>${customerName}</span></div>` : ''}
-<div class="row"><span>Pelayan</span><span>${waiterName}</span></div>
-<div class="row"><span>Kasir</span><span>${cashierName || ''}</span></div>
-<div class="row"><span>Waktu</span><span>${new Date().toLocaleString('id-ID')}</span></div>
-<div class="divider"></div>
-${kitchens.filter(k => grouped[k]?.length).map(k => `
-<p class="section-title">[${KITCHEN_LABELS[k]}]</p>
-${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><span>${formatCurrency(i.subtotal)}</span></div>`).join('')}
-`).join('')}
-<div class="divider"></div>
-<div class="row total"><span>TOTAL</span><span>${formatCurrency(total)}</span></div>
-<div class="footer"><p>Terima kasih atas kunjungan Anda!</p></div>
-</body></html>`;
-
-    const w = window.open('', '_blank');
-    if (w) { w.document.write(html); w.document.close(); w.print(); }
   }
 
   async function updateTableNumber(tableKey: string) {
@@ -265,7 +223,10 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
             alert(`Gagal memuat menu: ${error.message}`);
             return;
           }
-          setMenuItems(data || []);
+          setMenuItems((data || []).map((item: any) => ({
+            ...item,
+            category: normalizeKitchen(item.category),
+          })));
         });
     }
   }
@@ -444,6 +405,8 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
             const kitchens = [...new Set(tableOrders.map(o => o.kitchen))] as Kitchen[];
             const isExpanded = expanded[key] ?? true;
             const isReadyToPay = tableOrders.every(order => order.status === 'done');
+            const currentPaymentMethod = paymentMethods[key] ?? 'cash';
+            const amountPaid = Number(paymentAmounts[key] ?? total);
 
             return (
               <div key={key} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -504,70 +467,127 @@ ${grouped[k].map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><sp
                       );
                     })}
 
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                      <div>
-                        <p className="text-xs text-gray-400">{allItems.reduce((s, i) => s + i.quantity, 0)} item</p>
-                        <p className="font-bold text-xl text-gray-900">{formatCurrency(total)}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        {editingTableKey === key ? (
-                          <form
-                            onSubmit={e => { e.preventDefault(); void updateTableNumber(key); }}
-                            className="flex items-center gap-2"
-                            onClick={e => e.stopPropagation()}
-                          >
+                    <div className="space-y-3 pt-3 border-t border-gray-100">
+                      <div className="rounded-xl bg-gray-50 p-3" onClick={event => event.stopPropagation()}>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Kalkulator Pembayaran</p>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <label className="text-xs font-medium text-gray-500">
+                            Metode pembayaran
+                            <select
+                              value={currentPaymentMethod}
+                              onChange={event => setPaymentMethods(prev => ({ ...prev, [key]: event.target.value as PaymentMethod }))}
+                              disabled={!isReadyToPay || paying === key}
+                              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800"
+                            >
+                              <option value="cash">Cash / Tunai</option>
+                              <option value="qris">QRIS</option>
+                              <option value="transfer">Transfer</option>
+                            </select>
+                          </label>
+                          <label className="text-xs font-medium text-gray-500">
+                            Uang dibayar
                             <input
-                              autoFocus
-                              value={tableDraft}
-                              onChange={e => setTableDraft(e.target.value)}
-                              aria-label="Nomor meja baru"
-                              placeholder="Nomor meja baru"
-                              className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                              type="number"
+                              min={total}
+                              step="1"
+                              value={paymentAmounts[key] ?? String(total)}
+                              onChange={event => setPaymentAmounts(prev => ({ ...prev, [key]: event.target.value }))}
+                              disabled={!isReadyToPay || paying === key}
+                              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800"
                             />
-                            <button type="submit" disabled={updatingTable} aria-label="Simpan nomor meja" className="p-2 text-teal-600 hover:bg-teal-50 rounded-lg disabled:opacity-50">
-                              {updatingTable ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                          </label>
+                          <div className="flex flex-col justify-center text-sm">
+                            <span className="text-xs text-gray-500">{currentPaymentMethod === 'cash' ? 'Kembalian' : 'Pembayaran'}</span>
+                            {currentPaymentMethod === 'cash'
+                              ? amountPaid >= total
+                                ? <span className="font-bold text-teal-700">{formatCurrency(amountPaid - total)}</span>
+                                : <span className="font-semibold text-rose-600">Kurang {formatCurrency(total - amountPaid)}</span>
+                              : amountPaid === total
+                                ? <span className="font-bold text-teal-700">Sesuai total</span>
+                                : <span className="font-semibold text-rose-600">Harus {formatCurrency(total)}</span>}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <p className="text-xs text-gray-400">{allItems.reduce((s, i) => s + i.quantity, 0)} item</p>
+                          <p className="font-bold text-xl text-gray-900">{formatCurrency(total)}</p>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {editingTableKey === key ? (
+                            <form
+                              onSubmit={e => { e.preventDefault(); void updateTableNumber(key); }}
+                              className="flex items-center gap-2"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <input
+                                autoFocus
+                                value={tableDraft}
+                                onChange={e => setTableDraft(e.target.value)}
+                                aria-label="Nomor meja baru"
+                                placeholder="Nomor meja baru"
+                                className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                              />
+                              <button type="submit" disabled={updatingTable} aria-label="Simpan nomor meja" className="p-2 text-teal-600 hover:bg-teal-50 rounded-lg disabled:opacity-50">
+                                {updatingTable ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                              </button>
+                              <button type="button" onClick={() => setEditingTableKey(null)} aria-label="Batal ubah meja" className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg">
+                                <X size={16} />
+                              </button>
+                            </form>
+                          ) : (
+                            <button
+                              onClick={() => { setEditingTableKey(key); setTableDraft(tableNumber); }}
+                              className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors text-sm"
+                            >
+                              <Pencil size={15} />
+                              Ubah Meja
                             </button>
-                            <button type="button" onClick={() => setEditingTableKey(null)} aria-label="Batal ubah meja" className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg">
-                              <X size={16} />
-                            </button>
-                          </form>
-                        ) : (
+                          )}
                           <button
-                            onClick={() => { setEditingTableKey(key); setTableDraft(tableNumber); }}
-                            className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors text-sm"
+                            onClick={() => startEditingOrder(key, tableOrders)}
+                            className="flex items-center gap-2 px-4 py-2.5 border border-orange-200 text-orange-700 font-semibold rounded-xl hover:bg-orange-50 transition-colors text-sm"
                           >
                             <Pencil size={15} />
-                            Ubah Meja
+                            Edit Pesanan
                           </button>
-                        )}
-                        <button
-                          onClick={() => startEditingOrder(key, tableOrders)}
-                          className="flex items-center gap-2 px-4 py-2.5 border border-orange-200 text-orange-700 font-semibold rounded-xl hover:bg-orange-50 transition-colors text-sm"
-                        >
-                          <Pencil size={15} />
-                          Edit Pesanan
-                        </button>
-                        <button
-                          onClick={() => {
-                            const items = allItems.map(i => ({
-                              name: i.menu_item_name, price: i.menu_item_price,
-                              quantity: i.quantity, subtotal: i.subtotal, kitchen: i.kitchen as Kitchen
-                            }));
-                            printReceipt({ receiptNumber: 'PREVIEW', tableNumber, waiterName, customerName, cashierName, items, total });
-                          }}
-                          className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors text-sm"
-                        >
-                          <Printer size={15} />
-                          Preview
-                        </button>
-                        <button
-                          onClick={() => processPayment(key)}
-                          disabled={paying === key || !isReadyToPay}
-                          className="flex items-center gap-2 px-5 py-2.5 bg-rose-500 hover:bg-rose-600 disabled:bg-rose-300 text-white font-semibold rounded-xl transition-colors text-sm"
-                        >
-                          {paying === key ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
-                          {isReadyToPay ? 'Bayar & Simpan' : 'Menunggu Dapur'}
-                        </button>
+                          <button
+                            onClick={() => {
+                              const items = allItems.map(i => ({
+                                name: i.menu_item_name, price: i.menu_item_price,
+                                quantity: i.quantity, subtotal: i.subtotal, kitchen: i.kitchen as Kitchen
+                              }));
+                              try {
+                                printReceipt({
+                                  receipt_number: 'PREVIEW',
+                                  table_number: tableNumber,
+                                  waiter_name: waiterName,
+                                  customer_name: customerName,
+                                  cashier_name: cashierName,
+                                  total_amount: total,
+                                  amount_paid: amountPaid,
+                                  payment_method: currentPaymentMethod,
+                                  items_snapshot: items,
+                                  paid_at: new Date().toISOString(),
+                                });
+                              } catch (error) {
+                                alert(error instanceof Error ? error.message : 'Gagal mencetak preview.');
+                              }
+                            }}
+                            className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors text-sm"
+                          >
+                            <Printer size={15} />
+                            Preview
+                          </button>
+                          <button
+                            onClick={() => processPayment(key)}
+                            disabled={paying === key || !isReadyToPay}
+                            className="flex items-center gap-2 px-5 py-2.5 bg-rose-500 hover:bg-rose-600 disabled:bg-rose-300 text-white font-semibold rounded-xl transition-colors text-sm"
+                          >
+                            {paying === key ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
+                            {isReadyToPay ? 'Bayar & Cetak Struk' : 'Menunggu Dapur'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

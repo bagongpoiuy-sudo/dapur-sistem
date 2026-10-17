@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BarChart3, Printer, Loader2, Calendar, TrendingUp, ShoppingBag, ChevronLeft, ChevronRight, History, Search, Pencil, Save, X, Plus, Trash2 } from 'lucide-react';
 import { supabase, CashierReceipt, ReceiptItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency } from '../lib/supabase';
+import { printReceipt } from '../lib/receiptPrinter';
 
 type ReportType = 'daily' | 'weekly';
 
@@ -371,12 +372,26 @@ ${Object.entries(dailyData).map(([d, v]) => `<tr><td>${d}</td><td>${formatCurren
                     </p>
                     <p className="mt-1 text-xs text-gray-500">{(receipt.items_snapshot || []).length} jenis item · {formatCurrency(receipt.total_amount)}</p>
                   </div>
-                  <button
-                    onClick={() => beginReceiptCorrection(receipt)}
-                    className="flex items-center justify-center gap-2 rounded-xl border border-violet-200 px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50"
-                  >
-                    <Pencil size={15} /> Koreksi Nota
-                  </button>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      onClick={() => {
+                        try {
+                          printReceipt(receipt);
+                        } catch (error) {
+                          alert(error instanceof Error ? error.message : 'Gagal mencetak ulang nota.');
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      <Printer size={15} /> Print Ulang
+                    </button>
+                    <button
+                      onClick={() => beginReceiptCorrection(receipt)}
+                      className="flex items-center justify-center gap-2 rounded-xl border border-violet-200 px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50"
+                    >
+                      <Pencil size={15} /> Koreksi Nota
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Minus, Trash2, Send, ShoppingCart, User, Table2, StickyNote, RefreshCw } from 'lucide-react';
-import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, getDiscountedPrice } from '../lib/supabase';
+import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, getDiscountedPrice, normalizeKitchen } from '../lib/supabase';
 
 interface CartItem {
   menuItem: MenuItem;
@@ -23,8 +23,8 @@ const waiterDraftKey = 'waiter_order_draft';
 const orderCategories: Kitchen[] = ['cafe', 'pastry', 'prasmanan', 'restoran'];
 const kitchens: Kitchen[] = ['cafe', 'restoran'];
 
-function isKitchen(value: unknown): value is Kitchen {
-  return value === 'cafe' || value === 'pastry' || value === 'prasmanan' || value === 'restoran';
+function isKitchen(value: unknown): value is Kitchen | 'pentri' {
+  return value === 'cafe' || value === 'pentri' || value === 'pastry' || value === 'prasmanan' || value === 'restoran';
 }
 
 function loadWaiterDraft(): WaiterDraft {
@@ -73,7 +73,7 @@ function loadWaiterDraft(): WaiterDraft {
             name: menuItem.name,
             price: menuItem.price,
             discount_percent: typeof menuItem.discount_percent === 'number' ? menuItem.discount_percent : 0,
-            category: menuItem.category,
+            category: normalizeKitchen(menuItem.category),
             is_available: menuItem.is_available,
             created_at: menuItem.created_at,
           },
@@ -84,14 +84,14 @@ function loadWaiterDraft(): WaiterDraft {
 
     return {
       cart,
-      selectedKitchen: isKitchen(draft.selectedKitchen) ? draft.selectedKitchen : 'cafe',
+      selectedKitchen: isKitchen(draft.selectedKitchen) ? normalizeKitchen(draft.selectedKitchen) : 'cafe',
       tableNumber: typeof draft.tableNumber === 'string' ? draft.tableNumber : '',
       waiterName: typeof draft.waiterName === 'string' ? draft.waiterName : '',
       customerName: typeof draft.customerName === 'string' ? draft.customerName : '',
       foodNotes: typeof draft.foodNotes === 'string' ? draft.foodNotes : '',
       drinkNotes: typeof draft.drinkNotes === 'string' ? draft.drinkNotes : '',
-      foodNotesKitchen: draft.foodNotesKitchen === '' || isKitchen(draft.foodNotesKitchen) ? draft.foodNotesKitchen : '',
-      drinkNotesKitchen: draft.drinkNotesKitchen === '' || isKitchen(draft.drinkNotesKitchen) ? draft.drinkNotesKitchen : '',
+      foodNotesKitchen: draft.foodNotesKitchen === '' ? '' : isKitchen(draft.foodNotesKitchen) ? normalizeKitchen(draft.foodNotesKitchen) : '',
+      drinkNotesKitchen: draft.drinkNotesKitchen === '' ? '' : isKitchen(draft.drinkNotesKitchen) ? normalizeKitchen(draft.drinkNotesKitchen) : '',
     };
   } catch (error) {
     console.warn('Gagal memulihkan draft pesanan pelayan.', error);
@@ -140,7 +140,11 @@ export default function WaiterPage() {
   async function fetchMenu() {
     setLoading(true);
     const { data } = await supabase.from('menu_items').select('*').eq('is_available', true).order('name');
-    setMenuItems(data || []);
+    const normalizedMenu = (data || []).map((item: any) => ({
+      ...item,
+      category: normalizeKitchen(item.category),
+    }));
+    setMenuItems(normalizedMenu);
     setLoading(false);
   }
 

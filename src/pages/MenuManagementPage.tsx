@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Loader2, BookOpen, ToggleLeft, ToggleRight, Save, X, Pencil } from 'lucide-react';
-import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, getDiscountedPrice } from '../lib/supabase';
+import { supabase, MenuItem, Kitchen, KITCHEN_LABELS, KITCHEN_COLORS, formatCurrency, getDiscountedPrice, normalizeKitchen } from '../lib/supabase';
 
 interface NewItem {
   name: string;
@@ -27,7 +27,10 @@ export default function MenuManagementPage() {
   async function fetchItems() {
     setLoading(true);
     const { data } = await supabase.from('menu_items').select('*').order('category').order('name');
-    setItems(data || []);
+    setItems((data || []).map((item: any) => ({
+      ...item,
+      category: normalizeKitchen(item.category),
+    })));
     setLoading(false);
   }
 
